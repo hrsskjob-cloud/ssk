@@ -1,9 +1,19 @@
 -- ==============================================================================
--- SSKJOBS.IN — SUPABASE POSTGRESQL PRODUCTION SCHEMA
--- SSK People Foundation Official Recruitment & Staffing Platform
+-- SSK JOB NETWORK — SUPABASE POSTGRESQL PRODUCTION DATABASE SCHEMA
+-- Initiative under SSK People Foundation
+-- ==============================================================================
+-- This complete script sets up all required tables, constraints, sequences,
+-- indexes, triggers, row level security (RLS) policies, and admin accounts.
+-- Safe to run in the Supabase SQL Editor (Idempotent / IF NOT EXISTS).
 -- ==============================================================================
 
+-- Enable UUID extension if needed
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ==============================================================================
 -- 1. EMPLOYER REQUIREMENTS TABLE
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.employer_requirements (
     id BIGSERIAL PRIMARY KEY,
     requirement_id VARCHAR(50) UNIQUE NOT NULL,
@@ -28,12 +38,14 @@ CREATE TABLE IF NOT EXISTS public.employer_requirements (
     interview_remarks TEXT,
     offer_date VARCHAR(50),
     placement_date VARCHAR(50),
-    annual_package NUMERIC(12, 2),
+    annual_package NUMERIC(12, 2) DEFAULT 0,
     admin_notes TEXT,
     days_to_placement INTEGER
 );
 
+-- ==============================================================================
 -- 2. EMPLOYEE / CANDIDATE PROFILES TABLE
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.employee_candidates (
     id BIGSERIAL PRIMARY KEY,
     candidate_id VARCHAR(50) UNIQUE NOT NULL,
@@ -56,23 +68,27 @@ CREATE TABLE IF NOT EXISTS public.employee_candidates (
     interview_remarks TEXT,
     offer_date VARCHAR(50),
     hired_date VARCHAR(50),
-    annual_package NUMERIC(12, 2),
+    annual_package NUMERIC(12, 2) DEFAULT 0,
     admin_notes TEXT
 );
 
--- 3. STATUS HISTORY / AUDIT LOG TABLE
+-- ==============================================================================
+-- 3. STATUS HISTORY & AUDIT LOG TABLE
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.status_history (
     id BIGSERIAL PRIMARY KEY,
     record_type VARCHAR(20) NOT NULL, -- 'EMPLOYER' or 'CANDIDATE'
     record_id VARCHAR(50) NOT NULL,
     previous_status VARCHAR(50),
     new_status VARCHAR(50) NOT NULL,
-    changed_by VARCHAR(100) NOT NULL,
+    changed_by VARCHAR(100) NOT NULL DEFAULT 'System',
     changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     remarks TEXT
 );
 
+-- ==============================================================================
 -- 4. OTP SESSIONS TABLE
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.otp_sessions (
     mobile VARCHAR(20) PRIMARY KEY,
     otp VARCHAR(10) NOT NULL,
@@ -83,7 +99,9 @@ CREATE TABLE IF NOT EXISTS public.otp_sessions (
     token_expires_at BIGINT
 );
 
+-- ==============================================================================
 -- 5. ADMIN SESSIONS TABLE
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.admin_sessions (
     token VARCHAR(255) PRIMARY KEY,
     username VARCHAR(100) NOT NULL,
@@ -92,7 +110,23 @@ CREATE TABLE IF NOT EXISTS public.admin_sessions (
 );
 
 -- ==============================================================================
--- INDEXES FOR HIGH-SPEED LOOKUP & OTP VERIFICATION
+-- 6. ADMIN USERS TABLE
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255),
+    password TEXT NOT NULL,
+    password_hash VARCHAR(255),
+    full_name VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'super_admin',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_login_at TIMESTAMPTZ
+);
+
+-- ==============================================================================
+-- 7. PERFORMANCE & LOOKUP INDEXES
 -- ==============================================================================
 CREATE INDEX IF NOT EXISTS idx_employer_mobile ON public.employer_requirements(mobile);
 CREATE INDEX IF NOT EXISTS idx_employer_req_id ON public.employer_requirements(requirement_id);
@@ -103,55 +137,140 @@ CREATE INDEX IF NOT EXISTS idx_candidate_id ON public.employee_candidates(candid
 CREATE INDEX IF NOT EXISTS idx_candidate_status ON public.employee_candidates(status);
 
 CREATE INDEX IF NOT EXISTS idx_status_history_record ON public.status_history(record_id);
+CREATE INDEX IF NOT EXISTS idx_admin_username ON public.admin_users(username);
+CREATE INDEX IF NOT EXISTS idx_admin_email ON public.admin_users(email);
 
 -- ==============================================================================
--- ROW LEVEL SECURITY (RLS) POLICIES
+-- 8. AUTOMATIC STATUS TIMESTAMP UPDATE TRIGGER
 -- ==============================================================================
--- Enable RLS
+CREATE OR REPLACE FUNCTION update_status_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (OLD.status IS DISTINCT FROM NEW.status) THEN
+        NEW.status_updated_at = NOW();
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_employer_status_timestamp ON public.employer_requirements;
+CREATE TRIGGER trigger_employer_status_timestamp
+BEFORE UPDATE ON public.employer_requirements
+FOR EACH ROW EXECUTE FUNCTION update_status_timestamp();
+
+DROP TRIGGER IF EXISTS trigger_candidate_status_timestamp ON public.employee_candidates;
+CREATE TRIGGER trigger_candidate_status_timestamp
+BEFORE UPDATE ON public.employee_candidates
+FOR EACH ROW EXECUTE FUNCTION update_status_timestamp();
+
+-- ==============================================================================
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES
+-- ==============================================================================
+-- Enable RLS on all application tables
 ALTER TABLE public.employer_requirements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employee_candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.status_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.otp_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
--- Allow full access to service_role and postgres roles (used by application server)
-CREATE POLICY "Allow all access to service role for employer_requirements"
+-- 9.1 SERVICE ROLE POLICIES (Full unrestricted access for Server-Side API)
+DROP POLICY IF EXISTS "service_role_all_employer_requirements" ON public.employer_requirements;
+CREATE POLICY "service_role_all_employer_requirements"
 ON public.employer_requirements FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow all access to service role for employee_candidates"
+DROP POLICY IF EXISTS "service_role_all_employee_candidates" ON public.employee_candidates;
+CREATE POLICY "service_role_all_employee_candidates"
 ON public.employee_candidates FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow all access to service role for status_history"
+DROP POLICY IF EXISTS "service_role_all_status_history" ON public.status_history;
+CREATE POLICY "service_role_all_status_history"
 ON public.status_history FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow all access to service role for otp_sessions"
+DROP POLICY IF EXISTS "service_role_all_otp_sessions" ON public.otp_sessions;
+CREATE POLICY "service_role_all_otp_sessions"
 ON public.otp_sessions FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow all access to service role for admin_sessions"
+DROP POLICY IF EXISTS "service_role_all_admin_sessions" ON public.admin_sessions;
+CREATE POLICY "service_role_all_admin_sessions"
 ON public.admin_sessions FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- Allow public read access (for anon API or read-only public queries)
-CREATE POLICY "Allow public read on employer requirements"
+DROP POLICY IF EXISTS "service_role_all_admin_users" ON public.admin_users;
+CREATE POLICY "service_role_all_admin_users"
+ON public.admin_users FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 9.2 PUBLIC / ANON POLICIES (Client web access)
+-- Public can read employer requirements & candidates for aggregated statistics & status tracking
+DROP POLICY IF EXISTS "anon_select_employer_requirements" ON public.employer_requirements;
+CREATE POLICY "anon_select_employer_requirements"
 ON public.employer_requirements FOR SELECT TO anon USING (true);
 
-CREATE POLICY "Allow public read on employee candidates"
-ON public.employee_candidates FOR SELECT TO anon USING (true);
-
-CREATE POLICY "Allow public read on status history"
-ON public.status_history FOR SELECT TO anon USING (true);
-
--- Allow public insertion for candidate & employer registration
-CREATE POLICY "Allow public insert on employer requirements"
+DROP POLICY IF EXISTS "anon_insert_employer_requirements" ON public.employer_requirements;
+CREATE POLICY "anon_insert_employer_requirements"
 ON public.employer_requirements FOR INSERT TO anon WITH CHECK (true);
 
-CREATE POLICY "Allow public insert on employee candidates"
+DROP POLICY IF EXISTS "anon_select_employee_candidates" ON public.employee_candidates;
+CREATE POLICY "anon_select_employee_candidates"
+ON public.employee_candidates FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_insert_employee_candidates" ON public.employee_candidates;
+CREATE POLICY "anon_insert_employee_candidates"
 ON public.employee_candidates FOR INSERT TO anon WITH CHECK (true);
 
-CREATE POLICY "Allow public insert and select on otp_sessions"
+DROP POLICY IF EXISTS "anon_select_status_history" ON public.status_history;
+CREATE POLICY "anon_select_status_history"
+ON public.status_history FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_all_otp_sessions" ON public.otp_sessions;
+CREATE POLICY "anon_all_otp_sessions"
 ON public.otp_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- STRICT SECURITY: anon and authenticated roles have NO direct access to admin_users or admin_sessions!
+-- Authentication is managed safely through the server /api/admin/login endpoint.
+
 -- ==============================================================================
--- INITIAL SEED DATA (IF TABLES ARE EMPTY)
+-- 10. SEED DESIGNATED ADMIN ACCOUNT
+-- ==============================================================================
+-- Creates administrator account:
+-- Email/Username: hrsskjon@gmail.com
+-- Password: Welcome@123
+INSERT INTO public.admin_users (
+    username,
+    email,
+    password,
+    password_hash,
+    full_name,
+    role,
+    is_active
+) VALUES 
+(
+    'hrsskjon@gmail.com',
+    'hrsskjon@gmail.com',
+    'Welcome@123',
+    'Welcome@123',
+    'SSK Platform Administrator',
+    'super_admin',
+    TRUE
+),
+(
+    'hrsskjon',
+    'hrsskjon@gmail.com',
+    'Welcome@123',
+    'Welcome@123',
+    'SSK Platform Administrator',
+    'super_admin',
+    TRUE
+)
+ON CONFLICT (username) DO UPDATE SET
+    email = EXCLUDED.email,
+    password = EXCLUDED.password,
+    password_hash = EXCLUDED.password_hash,
+    full_name = EXCLUDED.full_name,
+    role = EXCLUDED.role,
+    is_active = EXCLUDED.is_active;
+
+-- ==============================================================================
+-- 11. INITIAL SEED DATA FOR COMMUNITY METRICS (OPTIONAL / ON CONFLICT IGNORED)
 -- ==============================================================================
 INSERT INTO public.employer_requirements (
     requirement_id, contact_name, mobile, job_title, department, position_name,

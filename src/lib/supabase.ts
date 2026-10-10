@@ -3,11 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 // Supabase URL & Public Anon Key injected from environment variables
 const supabaseUrl =
   import.meta.env.VITE_SUPABASE_URL ||
-  'https://eujuizkbznzbnpmkbdbg.supabase.co';
+  'https://yvmwueebtltbbgydkyzk.supabase.co';
 
 const supabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1anVpemtiem56Ym5wbWtiZGJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2MzA0MDMsImV4cCI6MjEwNTIwNjQwM30.hZgRPR6xhYVK-PO3Mkwh2_81-qn6mrVODdk9F-eB834';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2bXd1ZWVidGx0YmJneWRreXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MzQzNTgsImV4cCI6MjEwNzIxMDM1OH0.Ok5LejpDSmkk65y-MoxNQuRqN6SlIGs2QqPTsJ7JQ9k';
 
 /**
  * Standard Supabase client instance for client-side queries, auth, or realtime subscriptions

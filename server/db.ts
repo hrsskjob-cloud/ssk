@@ -10,20 +10,20 @@ dotenv.config();
 const SUPABASE_URL =
   process.env.SUPABASE_URL ||
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://eujuizkbznzbnpmkbdbg.supabase.co";
+  "https://yvmwueebtltbbgydkyzk.supabase.co";
 
 const SUPABASE_KEY =
   process.env.SUPABASE_SECRET_KEY ||
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1anVpemtiem56Ym5wbWtiZGJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2MzA0MDMsImV4cCI6MjEwNTIwNjQwM30.hZgRPR6xhYVK-PO3Mkwh2_81-qn6mrVODdk9F-eB834";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2bXd1ZWVidGx0YmJneWRreXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MzQzNTgsImV4cCI6MjEwNzIxMDM1OH0.Ok5LejpDSmkk65y-MoxNQuRqN6SlIGs2QqPTsJ7JQ9k";
 
 export const supabaseClient: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export const pgPool = new Pool({
-  host: process.env.POSTGRES_HOST || "db.eujuizkbznzbnpmkbdbg.supabase.co",
+  host: process.env.POSTGRES_HOST || "db.yvmwueebtltbbgydkyzk.supabase.co",
   user: process.env.POSTGRES_USER || "postgres",
-  password: process.env.POSTGRES_PASSWORD || "0CUi1x4hD8wfF2WS",
+  password: process.env.POSTGRES_PASSWORD || "A06SIqtVIKevERFo",
   database: process.env.POSTGRES_DATABASE || "postgres",
   port: 5432,
   ssl: { rejectUnauthorized: false },
@@ -837,7 +837,7 @@ export async function getSupabaseStatus(): Promise<{
       return {
         connected: true,
         projectUrl: SUPABASE_URL,
-        host: process.env.POSTGRES_HOST || "db.eujuizkbznzbnpmkbdbg.supabase.co",
+        host: process.env.POSTGRES_HOST || "db.yvmwueebtltbbgydkyzk.supabase.co",
         database: process.env.POSTGRES_DATABASE || "postgres",
         latencyMs,
         tables: [
@@ -861,7 +861,7 @@ export async function getSupabaseStatus(): Promise<{
     return {
       connected: false,
       projectUrl: SUPABASE_URL,
-      host: process.env.POSTGRES_HOST || "db.eujuizkbznzbnpmkbdbg.supabase.co",
+      host: process.env.POSTGRES_HOST || "db.yvmwueebtltbbgydkyzk.supabase.co",
       database: process.env.POSTGRES_DATABASE || "postgres",
       latencyMs: Date.now() - start,
       tables: [],
