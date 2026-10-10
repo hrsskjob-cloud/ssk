@@ -35,6 +35,7 @@ export const pgPool = new Pool({
 export interface EmployerRequirement {
   id: number;
   requirement_id: string;
+  user_id?: string | null;
   contact_name: string;
   mobile: string;
   job_title: string;
@@ -64,6 +65,7 @@ export interface EmployerRequirement {
 export interface EmployeeCandidate {
   id: number;
   candidate_id: string;
+  user_id?: string | null;
   full_name: string;
   mobile: string;
   email: string;
@@ -91,6 +93,9 @@ export interface StatusHistoryItem {
   id: number;
   record_type: "EMPLOYER" | "CANDIDATE";
   record_id: string;
+  employer_id?: number | null;
+  candidate_id?: number | null;
+  user_id?: string | null;
   previous_status: string | null;
   new_status: string;
   changed_by: string;
@@ -465,30 +470,27 @@ export class PureDatabase implements Database {
         status_updated_at: status_updated_at || new Date().toISOString(),
       });
     } else if (s.startsWith("UPDATE employer_requirements SET")) {
-      const idParam = params[params.length - 1];
-      const reqParam = params[params.length - 2];
+      const searchKey = String(params[params.length - 1] || "");
       const item = this.tables.employer_requirements.find(
-        r => String(r.requirement_id) === String(reqParam) || String(r.id) === String(idParam)
+        r => String(r.requirement_id).toUpperCase() === searchKey.toUpperCase() || String(r.id) === searchKey
       );
-      if (item) {
-        if (params.length >= 12) {
-          const [
-            status, status_updated_at, interview_date, interview_time,
-            interview_mode, interview_remarks, offer_date, placement_date,
-            annual_package, admin_notes, days_to_placement
-          ] = params;
-          item.status = status;
-          item.status_updated_at = status_updated_at;
-          item.interview_date = interview_date;
-          item.interview_time = interview_time;
-          item.interview_mode = interview_mode;
-          item.interview_remarks = interview_remarks;
-          item.offer_date = offer_date;
-          item.placement_date = placement_date;
-          item.annual_package = annual_package;
-          item.admin_notes = admin_notes;
-          item.days_to_placement = days_to_placement;
-        }
+      if (item && params.length >= 11) {
+        const [
+          status, status_updated_at, admin_notes, interview_date, interview_time,
+          interview_mode, interview_remarks, offer_date, placement_date,
+          annual_package, days_to_placement
+        ] = params;
+        if (status !== undefined) item.status = status;
+        if (status_updated_at !== undefined) item.status_updated_at = status_updated_at;
+        if (admin_notes !== undefined) item.admin_notes = admin_notes;
+        if (interview_date !== undefined) item.interview_date = interview_date;
+        if (interview_time !== undefined) item.interview_time = interview_time;
+        if (interview_mode !== undefined) item.interview_mode = interview_mode;
+        if (interview_remarks !== undefined) item.interview_remarks = interview_remarks;
+        if (offer_date !== undefined) item.offer_date = offer_date;
+        if (placement_date !== undefined) item.placement_date = placement_date;
+        if (annual_package !== undefined) item.annual_package = annual_package ? Number(annual_package) : null;
+        if (days_to_placement !== undefined) item.days_to_placement = days_to_placement ? Number(days_to_placement) : null;
       }
     }
 
@@ -520,30 +522,46 @@ export class PureDatabase implements Database {
         status_updated_at: status_updated_at || new Date().toISOString(),
       });
     } else if (s.startsWith("UPDATE employee_candidates SET")) {
-      const idParam = params[params.length - 1];
-      const candParam = params[params.length - 2];
+      const searchKey = String(params[params.length - 1] || "");
       const item = this.tables.employee_candidates.find(
-        r => String(r.candidate_id) === String(candParam) || String(r.id) === String(idParam)
+        r => String(r.candidate_id).toUpperCase() === searchKey.toUpperCase() || String(r.id) === searchKey
       );
-      if (item) {
-        if (params.length >= 10) {
-          const [
-            status, status_updated_at, interview_date, interview_time,
-            interview_mode, interview_remarks, offer_date, hired_date,
-            annual_package, admin_notes
-          ] = params;
-          item.status = status;
-          item.status_updated_at = status_updated_at;
-          item.interview_date = interview_date;
-          item.interview_time = interview_time;
-          item.interview_mode = interview_mode;
-          item.interview_remarks = interview_remarks;
-          item.offer_date = offer_date;
-          item.hired_date = hired_date;
-          item.annual_package = annual_package;
-          item.admin_notes = admin_notes;
-        }
+      if (item && params.length >= 10) {
+        const [
+          status, status_updated_at, admin_notes, interview_date, interview_time,
+          interview_mode, interview_remarks, offer_date, hired_date,
+          annual_package
+        ] = params;
+        if (status !== undefined) item.status = status;
+        if (status_updated_at !== undefined) item.status_updated_at = status_updated_at;
+        if (admin_notes !== undefined) item.admin_notes = admin_notes;
+        if (interview_date !== undefined) item.interview_date = interview_date;
+        if (interview_time !== undefined) item.interview_time = interview_time;
+        if (interview_mode !== undefined) item.interview_mode = interview_mode;
+        if (interview_remarks !== undefined) item.interview_remarks = interview_remarks;
+        if (offer_date !== undefined) item.offer_date = offer_date;
+        if (hired_date !== undefined) item.hired_date = hired_date;
+        if (annual_package !== undefined) item.annual_package = annual_package ? Number(annual_package) : null;
       }
+    }
+
+    // 4B. DELETE operations
+    else if (s.startsWith("DELETE FROM employer_requirements")) {
+      const searchKey = String(params[0] || "");
+      this.tables.employer_requirements = this.tables.employer_requirements.filter(
+        r => String(r.requirement_id).toUpperCase() !== searchKey.toUpperCase() && String(r.id) !== searchKey
+      );
+      this.tables.status_history = this.tables.status_history.filter(
+        h => String(h.record_id).toUpperCase() !== searchKey.toUpperCase()
+      );
+    } else if (s.startsWith("DELETE FROM employee_candidates")) {
+      const searchKey = String(params[0] || "");
+      this.tables.employee_candidates = this.tables.employee_candidates.filter(
+        r => String(r.candidate_id).toUpperCase() !== searchKey.toUpperCase() && String(r.id) !== searchKey
+      );
+      this.tables.status_history = this.tables.status_history.filter(
+        h => String(h.record_id).toUpperCase() !== searchKey.toUpperCase()
+      );
     }
 
     // 5. status_history
@@ -725,10 +743,25 @@ async function initSupabasePostgres(): Promise<void> {
         last_login_at TIMESTAMPTZ
       );
 
+      -- Ensure user_id and foreign key columns exist
+      ALTER TABLE public.employer_requirements 
+      ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+      ALTER TABLE public.employee_candidates 
+      ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+      ALTER TABLE public.status_history 
+      ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS employer_id INTEGER REFERENCES public.employer_requirements(id) ON DELETE CASCADE,
+      ADD COLUMN IF NOT EXISTS candidate_id INTEGER REFERENCES public.employee_candidates(id) ON DELETE CASCADE;
+
       CREATE INDEX IF NOT EXISTS idx_emp_mobile ON employer_requirements(mobile);
       CREATE INDEX IF NOT EXISTS idx_cand_mobile ON employee_candidates(mobile);
       CREATE INDEX IF NOT EXISTS idx_status_history_rec ON status_history(record_id);
       CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
+      CREATE INDEX IF NOT EXISTS idx_emp_user_id ON employer_requirements(user_id);
+      CREATE INDEX IF NOT EXISTS idx_cand_user_id ON employee_candidates(user_id);
+      CREATE INDEX IF NOT EXISTS idx_status_hist_user_id ON status_history(user_id);
     `);
   } finally {
     client.release();
@@ -748,49 +781,480 @@ export async function syncFromSupabaseToLocal(db: Database): Promise<void> {
     const otpRows = await client.query("SELECT * FROM otp_sessions");
     const adminRows = await client.query("SELECT * FROM admin_sessions");
 
-    if (emps.rows.length > 0 || cands.rows.length > 0) {
-      pureDb.tables.employer_requirements = emps.rows.map(emp => ({
-        ...emp,
-        id: Number(emp.id),
-        submitted_at: emp.submitted_at instanceof Date ? emp.submitted_at.toISOString() : String(emp.submitted_at || ""),
-        status_updated_at: emp.status_updated_at instanceof Date ? emp.status_updated_at.toISOString() : String(emp.status_updated_at || ""),
-        annual_package: emp.annual_package ? Number(emp.annual_package) : null,
-        days_to_placement: emp.days_to_placement ? Number(emp.days_to_placement) : null,
-      }));
+    pureDb.tables.employer_requirements = emps.rows.map(emp => ({
+      ...emp,
+      id: Number(emp.id),
+      user_id: emp.user_id || null,
+      submitted_at: emp.submitted_at instanceof Date ? emp.submitted_at.toISOString() : String(emp.submitted_at || ""),
+      status_updated_at: emp.status_updated_at instanceof Date ? emp.status_updated_at.toISOString() : String(emp.status_updated_at || ""),
+      annual_package: emp.annual_package ? Number(emp.annual_package) : null,
+      days_to_placement: emp.days_to_placement ? Number(emp.days_to_placement) : null,
+    }));
 
-      pureDb.tables.employee_candidates = cands.rows.map(cand => ({
-        ...cand,
-        id: Number(cand.id),
-        immediate_joiner: Number(cand.immediate_joiner || 1),
-        applied_at: cand.applied_at instanceof Date ? cand.applied_at.toISOString() : String(cand.applied_at || ""),
-        status_updated_at: cand.status_updated_at instanceof Date ? cand.status_updated_at.toISOString() : String(cand.status_updated_at || ""),
-        annual_package: cand.annual_package ? Number(cand.annual_package) : null,
-      }));
+    pureDb.tables.employee_candidates = cands.rows.map(cand => ({
+      ...cand,
+      id: Number(cand.id),
+      user_id: cand.user_id || null,
+      immediate_joiner: Number(cand.immediate_joiner || 1),
+      applied_at: cand.applied_at instanceof Date ? cand.applied_at.toISOString() : String(cand.applied_at || ""),
+      status_updated_at: cand.status_updated_at instanceof Date ? cand.status_updated_at.toISOString() : String(cand.status_updated_at || ""),
+      annual_package: cand.annual_package ? Number(cand.annual_package) : null,
+    }));
 
-      pureDb.tables.status_history = history.rows.map(h => ({
-        ...h,
-        id: Number(h.id),
-        changed_at: h.changed_at instanceof Date ? h.changed_at.toISOString() : String(h.changed_at || "")
-      }));
+    pureDb.tables.status_history = history.rows.map(h => ({
+      ...h,
+      id: Number(h.id),
+      employer_id: h.employer_id ? Number(h.employer_id) : null,
+      candidate_id: h.candidate_id ? Number(h.candidate_id) : null,
+      user_id: h.user_id || null,
+      changed_at: h.changed_at instanceof Date ? h.changed_at.toISOString() : String(h.changed_at || "")
+    }));
 
-      pureDb.tables.otp_sessions = otpRows.rows.map(o => ({
-        ...o,
-        attempts: Number(o.attempts || 0),
-        expires_at: Number(o.expires_at || 0),
-        last_sent_at: Number(o.last_sent_at || 0),
-        token_expires_at: o.token_expires_at ? Number(o.token_expires_at) : null
-      }));
+    pureDb.tables.otp_sessions = otpRows.rows.map(o => ({
+      ...o,
+      attempts: Number(o.attempts || 0),
+      expires_at: Number(o.expires_at || 0),
+      last_sent_at: Number(o.last_sent_at || 0),
+      token_expires_at: o.token_expires_at ? Number(o.token_expires_at) : null
+    }));
 
-      pureDb.tables.admin_sessions = adminRows.rows.map(a => ({
-        ...a,
-        created_at: Number(a.created_at || 0),
-        expires_at: Number(a.expires_at || 0)
-      }));
-    } else {
+    pureDb.tables.admin_sessions = adminRows.rows.map(a => ({
+      ...a,
+      created_at: Number(a.created_at || 0),
+      expires_at: Number(a.expires_at || 0)
+    }));
+
+    if (emps.rows.length === 0 || cands.rows.length === 0) {
       seedInitialDataIfEmpty(db);
     }
 
     lastSupabaseSync = new Date().toISOString();
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Direct, verified database write functions that execute against Supabase PostgreSQL
+ * and keep the local state in sync. Throws if Supabase rejects the write.
+ */
+export async function insertEmployerRequirementDirect(data: {
+  requirement_id: string;
+  contact_name: string;
+  mobile: string;
+  job_title: string;
+  department: string;
+  position_name: string;
+  job_location: string;
+  qualification: string;
+  experience_required: string;
+  skills: string;
+  job_description: string;
+  salary_range: string;
+  hiring_deadline: string;
+  status: string;
+  user_id?: string | null;
+  admin_notes?: string | null;
+}): Promise<EmployerRequirement> {
+  const client = await pgPool.connect();
+  try {
+    const res = await client.query(
+      `INSERT INTO employer_requirements (
+        requirement_id, user_id, contact_name, mobile, job_title, department, position_name,
+        job_location, qualification, experience_required, skills, job_description,
+        salary_range, hiring_deadline, status, submitted_at, status_updated_at, admin_notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW(), $16)
+      RETURNING *`,
+      [
+        data.requirement_id,
+        data.user_id || null,
+        data.contact_name,
+        data.mobile,
+        data.job_title,
+        data.department,
+        data.position_name,
+        data.job_location,
+        data.qualification,
+        data.experience_required,
+        data.skills,
+        data.job_description,
+        data.salary_range,
+        data.hiring_deadline,
+        data.status || "Submitted",
+        data.admin_notes || null,
+      ]
+    );
+
+    const inserted = res.rows[0];
+
+    // Initial status history in Supabase
+    await client.query(
+      `INSERT INTO status_history (
+        record_type, record_id, employer_id, user_id, previous_status, new_status, changed_by, changed_at, remarks
+      ) VALUES ($1, $2, $3, $4, NULL, $5, $6, NOW(), $7)`,
+      [
+        "EMPLOYER",
+        inserted.requirement_id,
+        inserted.id,
+        inserted.user_id || null,
+        inserted.status,
+        "Public Form Submission",
+        "Requirement submitted by employer",
+      ]
+    );
+
+    // Update in-memory pureDb
+    const db = await getDb();
+    const pure = db as PureDatabase;
+    pure.tables.employer_requirements.unshift({
+      ...inserted,
+      id: Number(inserted.id),
+      annual_package: inserted.annual_package ? Number(inserted.annual_package) : null,
+      days_to_placement: inserted.days_to_placement ? Number(inserted.days_to_placement) : null,
+      submitted_at: inserted.submitted_at instanceof Date ? inserted.submitted_at.toISOString() : String(inserted.submitted_at),
+      status_updated_at: inserted.status_updated_at instanceof Date ? inserted.status_updated_at.toISOString() : String(inserted.status_updated_at),
+    });
+    pure.tables.status_history.unshift({
+      id: Date.now(),
+      record_type: "EMPLOYER",
+      record_id: inserted.requirement_id,
+      employer_id: Number(inserted.id),
+      candidate_id: null,
+      user_id: inserted.user_id,
+      previous_status: null,
+      new_status: inserted.status,
+      changed_by: "Public Form Submission",
+      changed_at: new Date().toISOString(),
+      remarks: "Requirement submitted by employer",
+    });
+
+    return inserted;
+  } finally {
+    client.release();
+  }
+}
+
+export async function insertCandidateDirect(data: {
+  candidate_id: string;
+  full_name: string;
+  mobile: string;
+  email: string;
+  current_location: string;
+  qualification: string;
+  total_experience: string;
+  current_ctc?: string | null;
+  expected_ctc: string;
+  skills: string;
+  immediate_joiner: number;
+  status: string;
+  user_id?: string | null;
+  admin_notes?: string | null;
+}): Promise<EmployeeCandidate> {
+  const client = await pgPool.connect();
+  try {
+    const res = await client.query(
+      `INSERT INTO employee_candidates (
+        candidate_id, user_id, full_name, mobile, email, current_location, qualification,
+        total_experience, current_ctc, expected_ctc, skills, immediate_joiner,
+        status, applied_at, status_updated_at, admin_notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW(), $14)
+      RETURNING *`,
+      [
+        data.candidate_id,
+        data.user_id || null,
+        data.full_name,
+        data.mobile,
+        data.email,
+        data.current_location,
+        data.qualification,
+        data.total_experience,
+        data.current_ctc || null,
+        data.expected_ctc,
+        data.skills,
+        data.immediate_joiner ? 1 : 0,
+        data.status || "Applied",
+        data.admin_notes || null,
+      ]
+    );
+
+    const inserted = res.rows[0];
+
+    // Initial status history in Supabase
+    await client.query(
+      `INSERT INTO status_history (
+        record_type, record_id, candidate_id, user_id, previous_status, new_status, changed_by, changed_at, remarks
+      ) VALUES ($1, $2, $3, $4, NULL, $5, $6, NOW(), $7)`,
+      [
+        "CANDIDATE",
+        inserted.candidate_id,
+        inserted.id,
+        inserted.user_id || null,
+        inserted.status,
+        "Public Form Registration",
+        "Candidate career profile registered",
+      ]
+    );
+
+    // Update in-memory pureDb
+    const db = await getDb();
+    const pure = db as PureDatabase;
+    pure.tables.employee_candidates.unshift({
+      ...inserted,
+      id: Number(inserted.id),
+      immediate_joiner: Number(inserted.immediate_joiner || 1),
+      annual_package: inserted.annual_package ? Number(inserted.annual_package) : null,
+      applied_at: inserted.applied_at instanceof Date ? inserted.applied_at.toISOString() : String(inserted.applied_at),
+      status_updated_at: inserted.status_updated_at instanceof Date ? inserted.status_updated_at.toISOString() : String(inserted.status_updated_at),
+    });
+    pure.tables.status_history.unshift({
+      id: Date.now(),
+      record_type: "CANDIDATE",
+      record_id: inserted.candidate_id,
+      employer_id: null,
+      candidate_id: Number(inserted.id),
+      user_id: inserted.user_id,
+      previous_status: null,
+      new_status: inserted.status,
+      changed_by: "Public Form Registration",
+      changed_at: new Date().toISOString(),
+      remarks: "Candidate career profile registered",
+    });
+
+    return inserted;
+  } finally {
+    client.release();
+  }
+}
+
+export async function updateEmployerRequirementDirect(
+  requirementId: string,
+  updates: {
+    status?: string;
+    admin_notes?: string | null;
+    interview_date?: string | null;
+    interview_time?: string | null;
+    interview_mode?: string | null;
+    interview_remarks?: string | null;
+    offer_date?: string | null;
+    placement_date?: string | null;
+    annual_package?: number | null;
+    days_to_placement?: number | null;
+  },
+  remarks?: string,
+  changedBy: string = "Admin",
+  userId?: string | null
+): Promise<EmployerRequirement> {
+  const client = await pgPool.connect();
+  try {
+    const sel = await client.query("SELECT * FROM employer_requirements WHERE requirement_id = $1", [requirementId]);
+    if (sel.rows.length === 0) {
+      throw new Error(`Employer requirement "${requirementId}" not found in database.`);
+    }
+    const current = sel.rows[0];
+    const prevStatus = current.status;
+    const newStatus = updates.status || prevStatus;
+
+    const res = await client.query(
+      `UPDATE employer_requirements SET
+        status = $1,
+        status_updated_at = NOW(),
+        admin_notes = COALESCE($2, admin_notes),
+        interview_date = COALESCE($3, interview_date),
+        interview_time = COALESCE($4, interview_time),
+        interview_mode = COALESCE($5, interview_mode),
+        interview_remarks = COALESCE($6, interview_remarks),
+        offer_date = COALESCE($7, offer_date),
+        placement_date = COALESCE($8, placement_date),
+        annual_package = COALESCE($9, annual_package),
+        days_to_placement = COALESCE($10, days_to_placement)
+      WHERE requirement_id = $11
+      RETURNING *`,
+      [
+        newStatus,
+        updates.admin_notes !== undefined ? updates.admin_notes : null,
+        updates.interview_date !== undefined ? updates.interview_date : null,
+        updates.interview_time !== undefined ? updates.interview_time : null,
+        updates.interview_mode !== undefined ? updates.interview_mode : null,
+        updates.interview_remarks !== undefined ? updates.interview_remarks : null,
+        updates.offer_date !== undefined ? updates.offer_date : null,
+        updates.placement_date !== undefined ? updates.placement_date : null,
+        updates.annual_package !== undefined && updates.annual_package !== null && updates.annual_package !== ("" as any)
+          ? Number(updates.annual_package)
+          : null,
+        updates.days_to_placement !== undefined ? updates.days_to_placement : null,
+        requirementId,
+      ]
+    );
+
+    const updated = res.rows[0];
+
+    if (newStatus !== prevStatus || remarks) {
+      await client.query(
+        `INSERT INTO status_history (
+          record_type, record_id, employer_id, user_id, previous_status, new_status, changed_by, changed_at, remarks
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
+        [
+          "EMPLOYER",
+          requirementId,
+          updated.id,
+          userId || updated.user_id || null,
+          prevStatus,
+          newStatus,
+          changedBy,
+          remarks || (updates.admin_notes ? `Updated by ${changedBy}: ${updates.admin_notes.slice(0, 60)}` : `Status updated to ${newStatus}`),
+        ]
+      );
+    }
+
+    // Refresh memory cache
+    const db = await getDb();
+    const pure = db as PureDatabase;
+    const inMem = pure.tables.employer_requirements.find(r => r.requirement_id === requirementId);
+    if (inMem) {
+      Object.assign(inMem, {
+        ...updated,
+        id: Number(updated.id),
+        annual_package: updated.annual_package ? Number(updated.annual_package) : null,
+        days_to_placement: updated.days_to_placement ? Number(updated.days_to_placement) : null,
+        status_updated_at: new Date().toISOString(),
+      });
+    }
+
+    return updated;
+  } finally {
+    client.release();
+  }
+}
+
+export async function updateCandidateDirect(
+  candidateId: string,
+  updates: {
+    status?: string;
+    admin_notes?: string | null;
+    interview_date?: string | null;
+    interview_time?: string | null;
+    interview_mode?: string | null;
+    interview_remarks?: string | null;
+    offer_date?: string | null;
+    hired_date?: string | null;
+    annual_package?: number | null;
+  },
+  remarks?: string,
+  changedBy: string = "Admin",
+  userId?: string | null
+): Promise<EmployeeCandidate> {
+  const client = await pgPool.connect();
+  try {
+    const sel = await client.query("SELECT * FROM employee_candidates WHERE candidate_id = $1", [candidateId]);
+    if (sel.rows.length === 0) {
+      throw new Error(`Candidate "${candidateId}" not found in database.`);
+    }
+    const current = sel.rows[0];
+    const prevStatus = current.status;
+    const newStatus = updates.status || prevStatus;
+
+    const res = await client.query(
+      `UPDATE employee_candidates SET
+        status = $1,
+        status_updated_at = NOW(),
+        admin_notes = COALESCE($2, admin_notes),
+        interview_date = COALESCE($3, interview_date),
+        interview_time = COALESCE($4, interview_time),
+        interview_mode = COALESCE($5, interview_mode),
+        interview_remarks = COALESCE($6, interview_remarks),
+        offer_date = COALESCE($7, offer_date),
+        hired_date = COALESCE($8, hired_date),
+        annual_package = COALESCE($9, annual_package)
+      WHERE candidate_id = $10
+      RETURNING *`,
+      [
+        newStatus,
+        updates.admin_notes !== undefined ? updates.admin_notes : null,
+        updates.interview_date !== undefined ? updates.interview_date : null,
+        updates.interview_time !== undefined ? updates.interview_time : null,
+        updates.interview_mode !== undefined ? updates.interview_mode : null,
+        updates.interview_remarks !== undefined ? updates.interview_remarks : null,
+        updates.offer_date !== undefined ? updates.offer_date : null,
+        updates.hired_date !== undefined ? updates.hired_date : null,
+        updates.annual_package !== undefined && updates.annual_package !== null && updates.annual_package !== ("" as any)
+          ? Number(updates.annual_package)
+          : null,
+        candidateId,
+      ]
+    );
+
+    const updated = res.rows[0];
+
+    if (newStatus !== prevStatus || remarks) {
+      await client.query(
+        `INSERT INTO status_history (
+          record_type, record_id, candidate_id, user_id, previous_status, new_status, changed_by, changed_at, remarks
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
+        [
+          "CANDIDATE",
+          candidateId,
+          updated.id,
+          userId || updated.user_id || null,
+          prevStatus,
+          newStatus,
+          changedBy,
+          remarks || (updates.admin_notes ? `Updated by ${changedBy}: ${updates.admin_notes.slice(0, 60)}` : `Status updated to ${newStatus}`),
+        ]
+      );
+    }
+
+    // Refresh memory cache
+    const db = await getDb();
+    const pure = db as PureDatabase;
+    const inMem = pure.tables.employee_candidates.find(r => r.candidate_id === candidateId);
+    if (inMem) {
+      Object.assign(inMem, {
+        ...updated,
+        id: Number(updated.id),
+        annual_package: updated.annual_package ? Number(updated.annual_package) : null,
+        status_updated_at: new Date().toISOString(),
+      });
+    }
+
+    return updated;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteEmployerRequirementDirect(requirementId: string): Promise<boolean> {
+  const client = await pgPool.connect();
+  try {
+    await client.query("DELETE FROM status_history WHERE record_id = $1", [requirementId]);
+    const res = await client.query("DELETE FROM employer_requirements WHERE requirement_id = $1 OR id::text = $1", [requirementId]);
+
+    const db = await getDb();
+    const pure = db as PureDatabase;
+    pure.tables.employer_requirements = pure.tables.employer_requirements.filter(
+      r => r.requirement_id !== requirementId && String(r.id) !== requirementId
+    );
+    pure.tables.status_history = pure.tables.status_history.filter(h => h.record_id !== requirementId);
+
+    return (res.rowCount ?? 0) > 0;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteCandidateDirect(candidateId: string): Promise<boolean> {
+  const client = await pgPool.connect();
+  try {
+    await client.query("DELETE FROM status_history WHERE record_id = $1", [candidateId]);
+    const res = await client.query("DELETE FROM employee_candidates WHERE candidate_id = $1 OR id::text = $1", [candidateId]);
+
+    const db = await getDb();
+    const pure = db as PureDatabase;
+    pure.tables.employee_candidates = pure.tables.employee_candidates.filter(
+      r => r.candidate_id !== candidateId && String(r.id) !== candidateId
+    );
+    pure.tables.status_history = pure.tables.status_history.filter(h => h.record_id !== candidateId);
+
+    return (res.rowCount ?? 0) > 0;
   } finally {
     client.release();
   }

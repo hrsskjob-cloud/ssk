@@ -17,6 +17,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS public.employer_requirements (
     id BIGSERIAL PRIMARY KEY,
     requirement_id VARCHAR(50) UNIQUE NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     contact_name VARCHAR(255) NOT NULL,
     mobile VARCHAR(20) NOT NULL,
     job_title VARCHAR(255) NOT NULL,
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS public.employer_requirements (
 CREATE TABLE IF NOT EXISTS public.employee_candidates (
     id BIGSERIAL PRIMARY KEY,
     candidate_id VARCHAR(50) UNIQUE NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     full_name VARCHAR(255) NOT NULL,
     mobile VARCHAR(20) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -79,6 +81,9 @@ CREATE TABLE IF NOT EXISTS public.status_history (
     id BIGSERIAL PRIMARY KEY,
     record_type VARCHAR(20) NOT NULL, -- 'EMPLOYER' or 'CANDIDATE'
     record_id VARCHAR(50) NOT NULL,
+    employer_id BIGINT REFERENCES public.employer_requirements(id) ON DELETE CASCADE,
+    candidate_id BIGINT REFERENCES public.employee_candidates(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     previous_status VARCHAR(50),
     new_status VARCHAR(50) NOT NULL,
     changed_by VARCHAR(100) NOT NULL DEFAULT 'System',
@@ -221,6 +226,18 @@ DROP POLICY IF EXISTS "anon_select_status_history" ON public.status_history;
 CREATE POLICY "anon_select_status_history"
 ON public.status_history FOR SELECT TO anon, authenticated USING (true);
 
+DROP POLICY IF EXISTS "anon_insert_status_history" ON public.status_history;
+CREATE POLICY "anon_insert_status_history"
+ON public.status_history FOR INSERT TO anon, authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "authenticated_update_employer_requirements" ON public.employer_requirements;
+CREATE POLICY "authenticated_update_employer_requirements"
+ON public.employer_requirements FOR UPDATE TO authenticated USING (auth.uid() = user_id OR user_id IS NULL) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "authenticated_update_employee_candidates" ON public.employee_candidates;
+CREATE POLICY "authenticated_update_employee_candidates"
+ON public.employee_candidates FOR UPDATE TO authenticated USING (auth.uid() = user_id OR user_id IS NULL) WITH CHECK (true);
+
 DROP POLICY IF EXISTS "anon_all_otp_sessions" ON public.otp_sessions;
 CREATE POLICY "anon_all_otp_sessions"
 ON public.otp_sessions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
@@ -234,9 +251,9 @@ ON public.otp_sessions FOR ALL TO anon, authenticated USING (true) WITH CHECK (t
 -- Ensure PostgREST roles have required schema and sequence privileges
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT SELECT, INSERT ON public.employer_requirements TO anon, authenticated;
-GRANT SELECT, INSERT ON public.employee_candidates TO anon, authenticated;
-GRANT SELECT ON public.status_history TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.employer_requirements TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.employee_candidates TO anon, authenticated;
+GRANT SELECT, INSERT ON public.status_history TO anon, authenticated;
 GRANT ALL ON public.otp_sessions TO anon, authenticated;
 
 -- Critical sequence access for BIGSERIAL auto-increment IDs
@@ -248,7 +265,7 @@ GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
 
 -- Future table defaults
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;
 

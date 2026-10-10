@@ -12,6 +12,12 @@ import {
   syncFromSupabaseToLocal,
   pgPool,
   supabaseClient,
+  insertEmployerRequirementDirect,
+  insertCandidateDirect,
+  updateEmployerRequirementDirect,
+  updateCandidateDirect,
+  deleteEmployerRequirementDirect,
+  deleteCandidateDirect,
 } from "./db.ts";
 import { requestOtp, verifyOtp, validateUserSession } from "./otp.ts";
 
@@ -214,9 +220,69 @@ router.get("/public/impact-stats", async (req: Request, res: Response) => {
 });
 
 async function getStatusById(cleanId: string) {
+    const upperId = cleanId.trim().toUpperCase();
+
+    // 1. Direct query against Supabase PostgreSQL
+    try {
+      const empRes = await pgPool.query(`
+        SELECT 
+          id, requirement_id, contact_name, mobile, job_title, department, position_name,
+          job_location, qualification, experience_required, skills, job_description,
+          salary_range, hiring_deadline, status, submitted_at, status_updated_at,
+          interview_date, interview_time, interview_mode, interview_remarks, offer_date, placement_date
+        FROM employer_requirements 
+        WHERE UPPER(requirement_id) = $1
+      `, [upperId]);
+
+      if (empRes.rows.length > 0) {
+        const empRecord = empRes.rows[0];
+        const histRes = await pgPool.query(`
+          SELECT previous_status, new_status, changed_at, remarks
+          FROM status_history
+          WHERE (record_type = 'EMPLOYER' AND record_id = $1) OR employer_id = $2
+          ORDER BY id ASC
+        `, [empRecord.requirement_id, empRecord.id]);
+        empRecord.timeline = histRes.rows;
+        return {
+          success: true,
+          type: "employer",
+          record: empRecord,
+        };
+      }
+
+      const candRes = await pgPool.query(`
+        SELECT 
+          id, candidate_id, full_name, mobile, email, current_location, qualification,
+          total_experience, current_ctc, expected_ctc, skills, immediate_joiner,
+          status, applied_at, status_updated_at, interview_date, interview_time,
+          interview_mode, interview_remarks, offer_date, hired_date
+        FROM employee_candidates 
+        WHERE UPPER(candidate_id) = $1
+      `, [upperId]);
+
+      if (candRes.rows.length > 0) {
+        const candRecord = candRes.rows[0];
+        const histRes = await pgPool.query(`
+          SELECT previous_status, new_status, changed_at, remarks
+          FROM status_history
+          WHERE (record_type = 'CANDIDATE' AND record_id = $1) OR candidate_id = $2
+          ORDER BY id ASC
+        `, [candRecord.candidate_id, candRecord.id]);
+        candRecord.timeline = histRes.rows;
+        return {
+          success: true,
+          type: "candidate",
+          record: candRecord,
+        };
+      }
+    } catch (pgErr) {
+      console.warn("Direct Supabase query failed in getStatusById, falling back to local memory:", pgErr);
+    }
+
+    // 2. Fallback to in-memory PureDatabase
     const db = await getDb();
 
-    // 1. Check Employer Requirements
+    // Check Employer Requirements
     const empStmt = db.prepare(`
       SELECT 
         id, requirement_id, contact_name, mobile, job_title, department, position_name,
@@ -226,7 +292,7 @@ async function getStatusById(cleanId: string) {
       FROM employer_requirements 
       WHERE UPPER(requirement_id) = ?
     `);
-    empStmt.bind([cleanId]);
+    empStmt.bind([upperId]);
     const empFound = empStmt.step();
     let empRecord: any = null;
     if (empFound) {
@@ -235,7 +301,6 @@ async function getStatusById(cleanId: string) {
     empStmt.free();
 
     if (empRecord) {
-      // Fetch status timeline
       const histStmt = db.prepare(`
         SELECT previous_status, new_status, changed_at, remarks
         FROM status_history
@@ -257,7 +322,7 @@ async function getStatusById(cleanId: string) {
       };
     }
 
-    // 2. Check Candidate Applications
+    // Check Candidate Applications
     const candStmt = db.prepare(`
       SELECT 
         id, candidate_id, full_name, mobile, email, current_location, qualification,
@@ -267,7 +332,7 @@ async function getStatusById(cleanId: string) {
       FROM employee_candidates 
       WHERE UPPER(candidate_id) = ?
     `);
-    candStmt.bind([cleanId]);
+    candStmt.bind([upperId]);
     const candFound = candStmt.step();
     let candRecord: any = null;
     if (candFound) {
@@ -276,7 +341,6 @@ async function getStatusById(cleanId: string) {
     candStmt.free();
 
     if (candRecord) {
-      // Fetch status timeline
       const histStmt = db.prepare(`
         SELECT previous_status, new_status, changed_at, remarks
         FROM status_history
@@ -300,7 +364,7 @@ async function getStatusById(cleanId: string) {
     
     return {
       success: false,
-      message: `No record found with ID "${cleanId}". Please check your Requirement ID (e.g. EMP001) or Application ID (e.g. JOB998) and try again.`,
+      message: `No record found with ID "${upperId}". Please check your Requirement ID (e.g. EMP001) or Application ID (e.g. JOB998) and try again.`,
     };
 }
 
@@ -355,6 +419,7 @@ router.post("/employer/register", async (req: Request, res: Response) => {
       salary_range,
       hiring_deadline,
       allow_continue,
+      user_id,
     } = req.body;
 
     // Validation
@@ -386,80 +451,91 @@ router.post("/employer/register", async (req: Request, res: Response) => {
       });
     }
 
+    // Identify authenticated user ID if available
+    let authenticatedUserId: string | null = user_id || null;
+    const token = extractBearerToken(req);
+    if (!authenticatedUserId && token) {
+      try {
+        const { data } = await supabaseClient.auth.getUser(token);
+        if (data?.user?.id) {
+          authenticatedUserId = data.user.id;
+        }
+      } catch {
+        // Not a Supabase JWT or invalid
+      }
+    }
+
     const db = await getDb();
 
-    // Duplicate check
+    // Duplicate check directly in Supabase Postgres & local memory
     if (!allow_continue) {
-      const dupStmt = db.prepare("SELECT requirement_id, status FROM employer_requirements WHERE mobile = ?");
-      dupStmt.bind([cleanMobile]);
-      const hasDuplicate = dupStmt.step();
-      let existingRecord = null;
-      if (hasDuplicate) {
-        existingRecord = dupStmt.getAsObject();
-      }
-      dupStmt.free();
-
-      if (hasDuplicate) {
-        return res.status(409).json({
-          success: false,
-          duplicate: true,
-          message: "A profile associated with this mobile number already exists.",
-          existingRecord,
-        });
+      try {
+        const dupCheck = await pgPool.query(
+          "SELECT requirement_id, status FROM employer_requirements WHERE mobile = $1 LIMIT 1",
+          [cleanMobile]
+        );
+        if (dupCheck.rows.length > 0) {
+          return res.status(409).json({
+            success: false,
+            duplicate: true,
+            message: "A profile associated with this mobile number already exists.",
+            existingRecord: dupCheck.rows[0],
+          });
+        }
+      } catch {
+        // Fallback to local check
+        const dupStmt = db.prepare("SELECT requirement_id, status FROM employer_requirements WHERE mobile = ?");
+        dupStmt.bind([cleanMobile]);
+        const hasDuplicate = dupStmt.step();
+        let existingRecord = null;
+        if (hasDuplicate) existingRecord = dupStmt.getAsObject();
+        dupStmt.free();
+        if (hasDuplicate) {
+          return res.status(409).json({
+            success: false,
+            duplicate: true,
+            message: "A profile associated with this mobile number already exists.",
+            existingRecord,
+          });
+        }
       }
     }
 
     // Generate unique random Requirement ID (e.g. EMP001, EMP482)
     const requirementId = generateUniqueRandomCode(db, "EMP");
-
-    const nowIso = new Date().toISOString();
     const initialStatus = "Submitted";
 
-    db.run(
-      `INSERT INTO employer_requirements (
-        requirement_id, contact_name, mobile, job_title, department, position_name,
-        job_location, qualification, experience_required, skills, job_description,
-        salary_range, hiring_deadline, status, submitted_at, status_updated_at,
-        admin_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      [
-        requirementId,
-        contact_name.trim(),
-        cleanMobile,
-        job_title.trim(),
-        department.trim(),
-        position_name.trim(),
-        job_location.trim(),
-        qualification.trim(),
-        experience_required.trim(),
-        skills.trim(),
-        job_description.trim(),
-        salary_range.trim(),
-        hiring_deadline.trim(),
-        initialStatus,
-        nowIso,
-        nowIso,
-      ]
-    );
-
-    // Record initial status history
-    db.run(
-      `INSERT INTO status_history (record_type, record_id, previous_status, new_status, changed_by, changed_at, remarks)
-       VALUES (?, ?, NULL, ?, ?, ?, ?)`,
-      ["EMPLOYER", requirementId, initialStatus, "Public Form Submission", nowIso, "Requirement submitted by employer"]
-    );
-
-    saveDb();
+    // Direct, verified Supabase insert (atomic with initial status history)
+    const insertedRecord = await insertEmployerRequirementDirect({
+      requirement_id: requirementId,
+      user_id: authenticatedUserId,
+      contact_name: contact_name.trim(),
+      mobile: cleanMobile,
+      job_title: job_title.trim(),
+      department: department.trim(),
+      position_name: position_name.trim(),
+      job_location: job_location.trim(),
+      qualification: qualification.trim(),
+      experience_required: experience_required.trim(),
+      skills: skills.trim(),
+      job_description: job_description.trim(),
+      salary_range: salary_range.trim(),
+      hiring_deadline: hiring_deadline.trim(),
+      status: initialStatus,
+    });
 
     res.json({
       success: true,
-      requirementId,
-      status: initialStatus,
-      message: "Requirement Submitted Successfully! Your requirement has been received by SSK JOB.",
+      requirementId: insertedRecord.requirement_id,
+      status: insertedRecord.status,
+      message: "Requirement Submitted Successfully! Your requirement has been safely saved to SSK JOB.",
     });
   } catch (err: any) {
-    console.error("Employer register error:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Employer register error in Supabase:", err);
+    res.status(500).json({
+      success: false,
+      message: "Database insertion failed: " + (err.message || "Unable to save employer requirement in Supabase."),
+    });
   }
 });
 
@@ -480,6 +556,7 @@ router.post("/candidate/register", async (req: Request, res: Response) => {
       skills,
       immediate_joiner,
       allow_continue,
+      user_id,
     } = req.body;
 
     if (
@@ -515,78 +592,90 @@ router.post("/candidate/register", async (req: Request, res: Response) => {
       });
     }
 
+    // Identify authenticated user ID if available
+    let authenticatedUserId: string | null = user_id || null;
+    const token = extractBearerToken(req);
+    if (!authenticatedUserId && token) {
+      try {
+        const { data } = await supabaseClient.auth.getUser(token);
+        if (data?.user?.id) {
+          authenticatedUserId = data.user.id;
+        }
+      } catch {
+        // Not a Supabase JWT or invalid
+      }
+    }
+
     const db = await getDb();
 
-    // Duplicate check
+    // Duplicate check directly in Supabase Postgres & local memory
     if (!allow_continue) {
-      const dupStmt = db.prepare("SELECT candidate_id, status FROM employee_candidates WHERE mobile = ?");
-      dupStmt.bind([cleanMobile]);
-      const hasDuplicate = dupStmt.step();
-      let existingRecord = null;
-      if (hasDuplicate) {
-        existingRecord = dupStmt.getAsObject();
-      }
-      dupStmt.free();
-
-      if (hasDuplicate) {
-        return res.status(409).json({
-          success: false,
-          duplicate: true,
-          message: "A profile associated with this mobile number already exists.",
-          existingRecord,
-        });
+      try {
+        const dupCheck = await pgPool.query(
+          "SELECT candidate_id, status FROM employee_candidates WHERE mobile = $1 LIMIT 1",
+          [cleanMobile]
+        );
+        if (dupCheck.rows.length > 0) {
+          return res.status(409).json({
+            success: false,
+            duplicate: true,
+            message: "A profile associated with this mobile number already exists.",
+            existingRecord: dupCheck.rows[0],
+          });
+        }
+      } catch {
+        // Fallback to local check
+        const dupStmt = db.prepare("SELECT candidate_id, status FROM employee_candidates WHERE mobile = ?");
+        dupStmt.bind([cleanMobile]);
+        const hasDuplicate = dupStmt.step();
+        let existingRecord = null;
+        if (hasDuplicate) existingRecord = dupStmt.getAsObject();
+        dupStmt.free();
+        if (hasDuplicate) {
+          return res.status(409).json({
+            success: false,
+            duplicate: true,
+            message: "A profile associated with this mobile number already exists.",
+            existingRecord,
+          });
+        }
       }
     }
 
     // Generate unique random Candidate ID (e.g. JOB998, JOB142)
     const candidateId = generateUniqueRandomCode(db, "JOB");
-
-    const nowIso = new Date().toISOString();
     const initialStatus = "Applied";
 
-    db.run(
-      `INSERT INTO employee_candidates (
-        candidate_id, full_name, mobile, email, current_location, qualification,
-        total_experience, current_ctc, expected_ctc, skills, immediate_joiner,
-        status, applied_at, status_updated_at, admin_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      [
-        candidateId,
-        full_name.trim(),
-        cleanMobile,
-        email.trim().toLowerCase(),
-        current_location.trim(),
-        qualification.trim(),
-        total_experience.trim(),
-        current_ctc ? current_ctc.trim() : null,
-        expected_ctc.trim(),
-        skills.trim(),
-        immediate_joiner ? 1 : 0,
-        initialStatus,
-        nowIso,
-        nowIso,
-      ]
-    );
-
-    // Initial status history
-    db.run(
-      `INSERT INTO status_history (record_type, record_id, previous_status, new_status, changed_by, changed_at, remarks)
-       VALUES (?, ?, NULL, ?, ?, ?, ?)`,
-      ["CANDIDATE", candidateId, initialStatus, "Public Form Registration", nowIso, "Candidate profile registered"]
-    );
-
-    saveDb();
+    // Direct, verified Supabase insert (atomic with initial status history)
+    const insertedRecord = await insertCandidateDirect({
+      candidate_id: candidateId,
+      user_id: authenticatedUserId,
+      full_name: full_name.trim(),
+      mobile: cleanMobile,
+      email: email.trim().toLowerCase(),
+      current_location: current_location.trim(),
+      qualification: qualification.trim(),
+      total_experience: total_experience.trim(),
+      current_ctc: current_ctc ? current_ctc.trim() : null,
+      expected_ctc: expected_ctc.trim(),
+      skills: skills.trim(),
+      immediate_joiner: immediate_joiner ? 1 : 0,
+      status: initialStatus,
+    });
 
     res.json({
       success: true,
-      candidateId,
-      status: initialStatus,
+      candidateId: insertedRecord.candidate_id,
+      status: insertedRecord.status,
       message:
-        "Profile Submitted Successfully! Your profile has been received by SSK JOB. Our team will validate your profile and connect you with suitable opportunities.",
+        "Profile Submitted Successfully! Your profile has been safely saved to SSK JOB. Our team will validate your profile and connect you with suitable opportunities.",
     });
   } catch (err: any) {
-    console.error("Candidate register error:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Candidate register error in Supabase:", err);
+    res.status(500).json({
+      success: false,
+      message: "Database insertion failed: " + (err.message || "Unable to save candidate in Supabase."),
+    });
   }
 });
 
@@ -663,17 +752,95 @@ router.post("/auth/otp/verify", async (req: Request, res: Response) => {
 router.get("/user/my-records", async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ success: false, message: "Unauthorized. Please verify via OTP." });
+    return res.status(401).json({ success: false, message: "Unauthorized. Please authenticate." });
   }
   const token = authHeader.substring(7);
-  const mobile = await validateUserSession(token);
+
+  let mobile = await validateUserSession(token);
+  let authenticatedUserId: string | null = null;
+
   if (!mobile) {
+    try {
+      const { data } = await supabaseClient.auth.getUser(token);
+      if (data?.user?.id) {
+        authenticatedUserId = data.user.id;
+        if (data.user.phone) {
+          mobile = data.user.phone.replace(/\D/g, "").slice(-10);
+        }
+      }
+    } catch {
+      // Not a Supabase JWT
+    }
+  }
+
+  if (!mobile && !authenticatedUserId) {
     return res.status(401).json({ success: false, message: "Session expired or invalid. Please re-authenticate." });
+  }
+
+  try {
+    // Direct live query from Supabase Postgres
+    const empRes = await pgPool.query(
+      `SELECT 
+        id, requirement_id, contact_name, mobile, job_title, department, position_name,
+        job_location, qualification, experience_required, skills, job_description,
+        salary_range, hiring_deadline, status, submitted_at, status_updated_at,
+        interview_date, interview_time, interview_mode, offer_date, placement_date
+      FROM employer_requirements 
+      WHERE ($1::text IS NOT NULL AND mobile = $1) OR ($2::uuid IS NOT NULL AND user_id = $2)
+      ORDER BY id DESC`,
+      [mobile || null, authenticatedUserId || null]
+    );
+
+    const candRes = await pgPool.query(
+      `SELECT 
+        id, candidate_id, full_name, mobile, email, current_location, qualification,
+        total_experience, current_ctc, expected_ctc, skills, immediate_joiner,
+        status, applied_at, status_updated_at, interview_date, interview_time,
+        interview_mode, offer_date, hired_date
+      FROM employee_candidates 
+      WHERE ($1::text IS NOT NULL AND mobile = $1) OR ($2::uuid IS NOT NULL AND user_id = $2)
+      ORDER BY id DESC`,
+      [mobile || null, authenticatedUserId || null]
+    );
+
+    const employerRecords = empRes.rows;
+    const candidateRecords = candRes.rows;
+
+    for (const emp of employerRecords) {
+      const histRes = await pgPool.query(
+        `SELECT previous_status, new_status, changed_at, remarks
+        FROM status_history
+        WHERE (record_type = 'EMPLOYER' AND record_id = $1) OR employer_id = $2
+        ORDER BY id ASC`,
+        [emp.requirement_id, emp.id]
+      );
+      emp.timeline = histRes.rows;
+    }
+
+    for (const cand of candidateRecords) {
+      const histRes = await pgPool.query(
+        `SELECT previous_status, new_status, changed_at, remarks
+        FROM status_history
+        WHERE (record_type = 'CANDIDATE' AND record_id = $1) OR candidate_id = $2
+        ORDER BY id ASC`,
+        [cand.candidate_id, cand.id]
+      );
+      cand.timeline = histRes.rows;
+    }
+
+    return res.json({
+      success: true,
+      mobile: mobile || "N/A",
+      employerRequirements: employerRecords,
+      candidateApplications: candidateRecords,
+    });
+  } catch (err: any) {
+    console.warn("Direct query failed in my-records, falling back to local memory:", err);
   }
 
   const db = await getDb();
 
-  // Employer requirements for this mobile
+  // Employer requirements fallback
   const empStmt = db.prepare(`
     SELECT 
       id, requirement_id, contact_name, mobile, job_title, department, position_name,
@@ -684,14 +851,14 @@ router.get("/user/my-records", async (req: Request, res: Response) => {
     WHERE mobile = ? 
     ORDER BY id DESC
   `);
-  empStmt.bind([mobile]);
+  empStmt.bind([mobile || ""]);
   const employerRecords: any[] = [];
   while (empStmt.step()) {
     employerRecords.push(empStmt.getAsObject());
   }
   empStmt.free();
 
-  // Employee candidates for this mobile
+  // Employee candidates fallback
   const candStmt = db.prepare(`
     SELECT 
       id, candidate_id, full_name, mobile, email, current_location, qualification,
@@ -702,7 +869,7 @@ router.get("/user/my-records", async (req: Request, res: Response) => {
     WHERE mobile = ? 
     ORDER BY id DESC
   `);
-  candStmt.bind([mobile]);
+  candStmt.bind([mobile || ""]);
   const candidateRecords: any[] = [];
   while (candStmt.step()) {
     candidateRecords.push(candStmt.getAsObject());
@@ -1168,6 +1335,7 @@ router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req
 
     const db = await getDb();
 
+    // Check existing record
     const selStmt = db.prepare("SELECT * FROM employer_requirements WHERE requirement_id = ? OR id = ?");
     selStmt.bind([id, id]);
     if (!selStmt.step()) {
@@ -1177,9 +1345,7 @@ router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req
     const current = selStmt.getAsObject() as unknown as EmployerRequirement;
     selStmt.free();
 
-    const nowIso = new Date().toISOString();
     const newStatus = status || current.status;
-    const previousStatus = current.status;
 
     // Calculate days to placement if Placement Successful
     let calculatedDays: number | null = current.days_to_placement || null;
@@ -1191,66 +1357,50 @@ router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req
       calculatedDays = diffDays;
     }
 
-    db.run(
-      `UPDATE employer_requirements SET
-        status = ?,
-        status_updated_at = ?,
-        admin_notes = ?,
-        interview_date = ?,
-        interview_time = ?,
-        interview_mode = ?,
-        interview_remarks = ?,
-        offer_date = ?,
-        placement_date = ?,
-        annual_package = ?,
-        days_to_placement = ?
-      WHERE requirement_id = ?`,
-      [
-        newStatus,
-        nowIso,
-        admin_notes !== undefined ? admin_notes : current.admin_notes,
-        interview_date !== undefined ? interview_date : current.interview_date,
-        interview_time !== undefined ? interview_time : current.interview_time,
-        interview_mode !== undefined ? interview_mode : current.interview_mode,
-        interview_remarks !== undefined ? interview_remarks : current.interview_remarks,
-        offer_date !== undefined ? offer_date : current.offer_date,
-        effectivePlacementDate,
-        annual_package !== undefined && annual_package !== "" ? Number(annual_package) : current.annual_package,
-        calculatedDays,
-        current.requirement_id,
-      ]
+    // Direct, verified Supabase update (atomic with status history)
+    const updated = await updateEmployerRequirementDirect(
+      current.requirement_id,
+      {
+        status: newStatus,
+        admin_notes: admin_notes !== undefined ? admin_notes : current.admin_notes,
+        interview_date: interview_date !== undefined ? interview_date : current.interview_date,
+        interview_time: interview_time !== undefined ? interview_time : current.interview_time,
+        interview_mode: interview_mode !== undefined ? interview_mode : current.interview_mode,
+        interview_remarks: interview_remarks !== undefined ? interview_remarks : current.interview_remarks,
+        offer_date: offer_date !== undefined ? offer_date : current.offer_date,
+        placement_date: effectivePlacementDate,
+        annual_package: annual_package !== undefined && annual_package !== "" ? Number(annual_package) : current.annual_package,
+        days_to_placement: calculatedDays,
+      },
+      remarks,
+      "Admin"
     );
-
-    // If status changed or remarks provided, add to history
-    if (newStatus !== previousStatus || remarks) {
-      db.run(
-        `INSERT INTO status_history (record_type, record_id, previous_status, new_status, changed_by, changed_at, remarks)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "EMPLOYER",
-          current.requirement_id,
-          previousStatus,
-          newStatus,
-          "Admin",
-          nowIso,
-          remarks || (admin_notes ? `Updated by Admin: ${admin_notes.slice(0, 60)}` : "Status updated by Admin"),
-        ]
-      );
-    }
-
-    saveDb();
 
     res.json({
       success: true,
       message: `Requirement status updated to ${newStatus}.`,
       data: {
-        requirement_id: current.requirement_id,
-        status: newStatus,
-        days_to_placement: calculatedDays,
+        requirement_id: updated.requirement_id,
+        status: updated.status,
+        days_to_placement: updated.days_to_placement,
       },
     });
   } catch (err: any) {
-    console.error("Status update error:", err);
+    console.error("Status update error in Supabase:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.delete("/admin/employer-requirements/:id", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id;
+    const success = await deleteEmployerRequirementDirect(id);
+    if (!success) {
+      return res.status(404).json({ success: false, message: "Employer requirement not found." });
+    }
+    res.json({ success: true, message: `Requirement ${id} deleted successfully.` });
+  } catch (err: any) {
+    console.error("Delete employer requirement error in Supabase:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -1362,6 +1512,7 @@ router.patch("/admin/job-seekers/:id/status", requireAdmin, async (req: Request,
 
     const db = await getDb();
 
+    // Check existing record
     const selStmt = db.prepare("SELECT * FROM employee_candidates WHERE candidate_id = ? OR id = ?");
     selStmt.bind([id, id]);
     if (!selStmt.step()) {
@@ -1371,66 +1522,50 @@ router.patch("/admin/job-seekers/:id/status", requireAdmin, async (req: Request,
     const current = selStmt.getAsObject() as unknown as EmployeeCandidate;
     selStmt.free();
 
-    const nowIso = new Date().toISOString();
     const newStatus = status || current.status;
-    const previousStatus = current.status;
 
-    db.run(
-      `UPDATE employee_candidates SET
-        status = ?,
-        status_updated_at = ?,
-        admin_notes = ?,
-        interview_date = ?,
-        interview_time = ?,
-        interview_mode = ?,
-        interview_remarks = ?,
-        offer_date = ?,
-        hired_date = ?,
-        annual_package = ?
-      WHERE candidate_id = ?`,
-      [
-        newStatus,
-        nowIso,
-        admin_notes !== undefined ? admin_notes : current.admin_notes,
-        interview_date !== undefined ? interview_date : current.interview_date,
-        interview_time !== undefined ? interview_time : current.interview_time,
-        interview_mode !== undefined ? interview_mode : current.interview_mode,
-        interview_remarks !== undefined ? interview_remarks : current.interview_remarks,
-        offer_date !== undefined ? offer_date : current.offer_date,
-        hired_date !== undefined ? hired_date : current.hired_date,
-        annual_package !== undefined && annual_package !== "" ? Number(annual_package) : current.annual_package,
-        current.candidate_id,
-      ]
+    // Direct, verified Supabase update (atomic with status history)
+    const updated = await updateCandidateDirect(
+      current.candidate_id,
+      {
+        status: newStatus,
+        admin_notes: admin_notes !== undefined ? admin_notes : current.admin_notes,
+        interview_date: interview_date !== undefined ? interview_date : current.interview_date,
+        interview_time: interview_time !== undefined ? interview_time : current.interview_time,
+        interview_mode: interview_mode !== undefined ? interview_mode : current.interview_mode,
+        interview_remarks: interview_remarks !== undefined ? interview_remarks : current.interview_remarks,
+        offer_date: offer_date !== undefined ? offer_date : current.offer_date,
+        hired_date: hired_date !== undefined ? hired_date : current.hired_date,
+        annual_package: annual_package !== undefined && annual_package !== "" ? Number(annual_package) : current.annual_package,
+      },
+      remarks,
+      "Admin"
     );
-
-    if (newStatus !== previousStatus || remarks) {
-      db.run(
-        `INSERT INTO status_history (record_type, record_id, previous_status, new_status, changed_by, changed_at, remarks)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "CANDIDATE",
-          current.candidate_id,
-          previousStatus,
-          newStatus,
-          "Admin",
-          nowIso,
-          remarks || (admin_notes ? `Updated by Admin: ${admin_notes.slice(0, 60)}` : "Status updated by Admin"),
-        ]
-      );
-    }
-
-    saveDb();
 
     res.json({
       success: true,
       message: `Candidate status updated to ${newStatus}.`,
       data: {
-        candidate_id: current.candidate_id,
-        status: newStatus,
+        candidate_id: updated.candidate_id,
+        status: updated.status,
       },
     });
   } catch (err: any) {
-    console.error("Candidate status update error:", err);
+    console.error("Candidate status update error in Supabase:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.delete("/admin/job-seekers/:id", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id;
+    const success = await deleteCandidateDirect(id);
+    if (!success) {
+      return res.status(404).json({ success: false, message: "Job seeker candidate not found." });
+    }
+    res.json({ success: true, message: `Candidate ${id} deleted successfully.` });
+  } catch (err: any) {
+    console.error("Delete candidate error in Supabase:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

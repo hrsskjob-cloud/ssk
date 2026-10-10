@@ -15,6 +15,7 @@ import {
   Send,
 } from 'lucide-react';
 import { SubmissionConfirmationData } from '../types.ts';
+import { supabase } from '../lib/supabase.ts';
 
 interface CandidateFormProps {
   onSuccess: (data: SubmissionConfirmationData) => void;
@@ -84,12 +85,28 @@ export const CandidateForm: React.FC<CandidateFormProps> = ({
     setErrorMessage(null);
 
     try {
+      let activeUserId: string | null = null;
+      let activeToken: string | null = null;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          activeUserId = sessionData.session.user.id;
+          activeToken = sessionData.session.access_token;
+        }
+      } catch {
+        // Fallback for non-authenticated public users
+      }
+
       const response = await fetch('/api/candidate/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+        },
         body: JSON.stringify({
           ...formData,
           allow_continue: forceContinue,
+          user_id: activeUserId,
         }),
       });
 

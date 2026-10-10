@@ -722,7 +722,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
                     </div>
                     <p className="text-xs text-slate-400 font-mono">
-                      Host: {supabaseStatus?.host || 'db.eujuizkbznzbnpmkbdbg.supabase.co'} • Project: eujuizkbznzbnpmkbdbg
+                      Host: {supabaseStatus?.host || 'db.yvmwueebtltbbgydkyzk.supabase.co'} • Project: {supabaseStatus?.projectUrl ? supabaseStatus.projectUrl.replace('https://', '').split('.')[0] : 'yvmwueebtltbbgydkyzk'}
                     </p>
                   </div>
                 </div>
