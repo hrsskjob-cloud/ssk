@@ -825,10 +825,6 @@ export async function syncFromSupabaseToLocal(db: Database): Promise<void> {
       expires_at: Number(a.expires_at || 0)
     }));
 
-    if (emps.rows.length === 0 || cands.rows.length === 0) {
-      seedInitialDataIfEmpty(db);
-    }
-
     lastSupabaseSync = new Date().toISOString();
   } finally {
     client.release();
