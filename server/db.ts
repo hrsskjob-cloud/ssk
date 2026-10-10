@@ -4,6 +4,9 @@ import dotenv from "dotenv";
 import { Pool } from "pg";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+// Force disable SSL verification for self-signed certificates in Supabase
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 dotenv.config();
 
 // Supabase Configuration from Environment
@@ -21,12 +24,10 @@ const SUPABASE_KEY =
 export const supabaseClient: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export const pgPool = new Pool({
-  host: process.env.POSTGRES_HOST || "db.yvmwueebtltbbgydkyzk.supabase.co",
-  user: process.env.POSTGRES_USER || "postgres",
-  password: process.env.POSTGRES_PASSWORD || "A06SIqtVIKevERFo",
-  database: process.env.POSTGRES_DATABASE || "postgres",
-  port: 5432,
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.POSTGRES_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 6000,
