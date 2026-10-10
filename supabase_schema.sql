@@ -203,30 +203,54 @@ ON public.admin_users FOR ALL TO service_role USING (true) WITH CHECK (true);
 -- Public can read employer requirements & candidates for aggregated statistics & status tracking
 DROP POLICY IF EXISTS "anon_select_employer_requirements" ON public.employer_requirements;
 CREATE POLICY "anon_select_employer_requirements"
-ON public.employer_requirements FOR SELECT TO anon USING (true);
+ON public.employer_requirements FOR SELECT TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS "anon_insert_employer_requirements" ON public.employer_requirements;
 CREATE POLICY "anon_insert_employer_requirements"
-ON public.employer_requirements FOR INSERT TO anon WITH CHECK (true);
+ON public.employer_requirements FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 DROP POLICY IF EXISTS "anon_select_employee_candidates" ON public.employee_candidates;
 CREATE POLICY "anon_select_employee_candidates"
-ON public.employee_candidates FOR SELECT TO anon USING (true);
+ON public.employee_candidates FOR SELECT TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS "anon_insert_employee_candidates" ON public.employee_candidates;
 CREATE POLICY "anon_insert_employee_candidates"
-ON public.employee_candidates FOR INSERT TO anon WITH CHECK (true);
+ON public.employee_candidates FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 DROP POLICY IF EXISTS "anon_select_status_history" ON public.status_history;
 CREATE POLICY "anon_select_status_history"
-ON public.status_history FOR SELECT TO anon USING (true);
+ON public.status_history FOR SELECT TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS "anon_all_otp_sessions" ON public.otp_sessions;
 CREATE POLICY "anon_all_otp_sessions"
-ON public.otp_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
+ON public.otp_sessions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- STRICT SECURITY: anon and authenticated roles have NO direct access to admin_users or admin_sessions!
 -- Authentication is managed safely through the server /api/admin/login endpoint.
+
+-- ==============================================================================
+-- 9.3 POSTGRES ROLE PERMISSIONS & SEQUENCE GRANTS
+-- ==============================================================================
+-- Ensure PostgREST roles have required schema and sequence privileges
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT SELECT, INSERT ON public.employer_requirements TO anon, authenticated;
+GRANT SELECT, INSERT ON public.employee_candidates TO anon, authenticated;
+GRANT SELECT ON public.status_history TO anon, authenticated;
+GRANT ALL ON public.otp_sessions TO anon, authenticated;
+
+-- Critical sequence access for BIGSERIAL auto-increment IDs
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
+-- Routine / function permissions
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
+
+-- Future table defaults
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;
 
 -- ==============================================================================
 -- 10. SEED DESIGNATED ADMIN ACCOUNT
@@ -255,6 +279,24 @@ INSERT INTO public.admin_users (
 (
     'hrsskjon',
     'hrsskjon@gmail.com',
+    'Welcome@123',
+    'Welcome@123',
+    'SSK Platform Administrator',
+    'super_admin',
+    TRUE
+),
+(
+    'hrsskjob@gmail.com',
+    'hrsskjob@gmail.com',
+    'Welcome@123',
+    'Welcome@123',
+    'SSK Platform Administrator',
+    'super_admin',
+    TRUE
+),
+(
+    'hrsskjob',
+    'hrsskjob@gmail.com',
     'Welcome@123',
     'Welcome@123',
     'SSK Platform Administrator',

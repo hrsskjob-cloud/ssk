@@ -46,6 +46,18 @@ export default function App() {
 
   useEffect(() => {
     fetchImpactStats();
+    if (adminToken) {
+      fetch('/api/admin/verify-session', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      })
+        .then((res) => {
+          if (!res.ok) {
+            localStorage.removeItem('sskj_admin_token');
+            setAdminToken(null);
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const handleNavigate = (view: AppView) => {
@@ -147,13 +159,20 @@ export default function App() {
           />
         )}
 
-        {currentView === 'admin-dashboard' && adminToken && (
-          <AdminDashboard
-            adminToken={adminToken}
-            adminUsername={adminUsername}
-            onLogout={handleAdminLogout}
-            onRefreshPublicStats={fetchImpactStats}
-          />
+        {currentView === 'admin-dashboard' && (
+          adminToken ? (
+            <AdminDashboard
+              adminToken={adminToken}
+              adminUsername={adminUsername}
+              onLogout={handleAdminLogout}
+              onRefreshPublicStats={fetchImpactStats}
+            />
+          ) : (
+            <AdminLogin
+              onLoginSuccess={handleAdminLoginSuccess}
+              onCancel={() => handleNavigate('home')}
+            />
+          )
         )}
 
         {currentView === 'privacy-policy' && (
