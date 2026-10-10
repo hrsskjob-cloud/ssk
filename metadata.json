@@ -1,0 +1,7 @@
+{
+  "name": "SSK JOB",
+  "description": "Community-driven recruitment and staffing platform under SSK People Foundation connecting SSK employers with SSK professionals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
