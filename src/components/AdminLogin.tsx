@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, User, ArrowLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Lock, User, ArrowLeft, AlertCircle } from 'lucide-react';
 import { APP_LOGO_URL } from '../constants/branding.ts';
+import { supabase } from '../lib/supabase.ts';
 
 interface AdminLoginProps {
   onLoginSuccess: (token: string, username: string) => void;
@@ -11,7 +12,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
   onLoginSuccess,
   onCancel,
 }) => {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState('hrsskjon@gmail.com');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +27,29 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
     setLoading(true);
     setError(null);
 
+    const cleanUsername = username.trim();
+    const cleanEmail = cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@gmail.com`;
+
     try {
+      // 1. Authenticate with Supabase Auth for persistent client session & auto token refresh
+      let supabaseToken: string | null = null;
+      try {
+        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+        if (!authErr && authData.session?.access_token) {
+          supabaseToken = authData.session.access_token;
+        }
+      } catch (clientAuthErr) {
+        console.warn('Supabase Auth signIn note:', clientAuthErr);
+      }
+
+      // 2. Authenticate with backend API
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: cleanUsername, password }),
       });
 
       const text = await res.text();
@@ -39,15 +58,21 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
         data = JSON.parse(text);
       } catch (e) {
         console.error('Failed to parse response as JSON:', text);
-        throw new Error(`Server returned an invalid response (status ${res.status}). Ensure the API route exists.`);
+        throw new Error(`Server returned an invalid response (status ${res.status}).`);
       }
 
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'Invalid administrative credentials.');
       }
 
-      localStorage.setItem('sskj_admin_token', data.token);
-      onLoginSuccess(data.token, data.username);
+      const activeToken = supabaseToken || data.token;
+      const activeUsername = data.username || cleanUsername;
+
+      localStorage.setItem('sskj_admin_token', activeToken);
+      localStorage.setItem('sskj_admin_username', activeUsername);
+      localStorage.setItem('sskj_current_view', 'admin-dashboard');
+
+      onLoginSuccess(activeToken, activeUsername);
     } catch (err: any) {
       setError(err.message || 'Login failed. Check your credentials.');
     } finally {

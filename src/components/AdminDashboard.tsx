@@ -38,6 +38,7 @@ import {
 } from '../types.ts';
 import { formatINR, formatDate, formatDateTime, getStatusBadgeClass } from '../utils/formatters.ts';
 import { APP_LOGO_URL } from '../constants/branding.ts';
+import { supabase } from '../lib/supabase.ts';
 
 interface AdminDashboardProps {
   adminToken: string;
@@ -190,9 +191,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchSupabaseStatus();
   }, [adminToken]);
 
+  // Authenticated fetch wrapper that attaches token, handles token refresh and prevents spurious logouts
+  const authFetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+    let currentToken = adminToken || localStorage.getItem('sskj_admin_token') || '';
+    const headers = new Headers(init.headers || {});
+    if (!headers.has('Authorization') && currentToken) {
+      headers.set('Authorization', `Bearer ${currentToken}`);
+    }
+
+    let response = await fetch(input, { ...init, headers });
+
+    if (response.status === 401) {
+      // 1. Attempt token refresh from Supabase Auth
+      try {
+        const { data } = await supabase.auth.refreshSession();
+        if (data?.session?.access_token) {
+          currentToken = data.session.access_token;
+          headers.set('Authorization', `Bearer ${currentToken}`);
+          localStorage.setItem('sskj_admin_token', currentToken);
+          // Retry request with fresh token
+          response = await fetch(input, { ...init, headers });
+        }
+      } catch (refreshErr) {
+        console.warn('Session refresh warning:', refreshErr);
+      }
+
+      // 2. Only if still 401, verify if session is definitively invalid
+      if (response.status === 401) {
+        try {
+          const verifyRes = await fetch('/api/admin/verify-session', {
+            headers: { Authorization: `Bearer ${currentToken}` },
+          });
+          if (verifyRes.status === 401) {
+            onLogout();
+          }
+        } catch {
+          // Network hiccup - preserve session
+        }
+      }
+    }
+
+    return response;
+  };
+
   const fetchSupabaseStatus = async () => {
     try {
-      const res = await fetch('/api/supabase/status');
+      const res = await authFetch('/api/supabase/status');
       const data = await res.json();
       if (data.success) {
         setSupabaseStatus(data.data);
@@ -206,9 +250,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSyncingSupabase(true);
     setErrorMessage(null);
     try {
-      const res = await fetch('/api/supabase/sync', {
+      const res = await authFetch('/api/supabase/sync', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${adminToken}` },
       });
       const data = await res.json();
       if (data.success) {
@@ -232,16 +275,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchKpis = async () => {
     try {
-      const res = await fetch('/api/admin/kpis', {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      if (res.status === 401) {
-        onLogout();
-        return;
-      }
-      const data = await res.json();
-      if (data.success) {
-        setKpis(data.data);
+      const res = await authFetch('/api/admin/kpis');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setKpis(data.data);
+        }
       }
     } catch (err) {
       console.error('Error fetching KPIs:', err);
@@ -250,12 +289,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchAllEmployers = async () => {
     try {
-      const res = await fetch('/api/admin/employer-requirements', {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setAllEmployers(data.data);
+      const res = await authFetch('/api/admin/employer-requirements');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setAllEmployers(data.data);
+        }
       }
     } catch (err) {
       console.error('Error fetching all employers:', err);
@@ -264,12 +303,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchAllCandidates = async () => {
     try {
-      const res = await fetch('/api/admin/job-seekers', {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setAllCandidates(data.data);
+      const res = await authFetch('/api/admin/job-seekers');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setAllCandidates(data.data);
+        }
       }
     } catch (err) {
       console.error('Error fetching all candidates:', err);
@@ -295,12 +334,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (sLoc) params.set('location', sLoc);
       if (sDept) params.set('department', sDept);
 
-      const res = await fetch(`/api/admin/employer-requirements?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setEmployers(data.data);
+      const res = await authFetch(`/api/admin/employer-requirements?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setEmployers(data.data);
+        }
       }
     } catch (err) {
       console.error('Error fetching employers:', err);
@@ -331,12 +370,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (sExp) params.set('experience', sExp);
       if (sImm) params.set('immediate_joiner', sImm);
 
-      const res = await fetch(`/api/admin/job-seekers?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setCandidates(data.data);
+      const res = await authFetch(`/api/admin/job-seekers?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setCandidates(data.data);
+        }
       }
     } catch (err) {
       console.error('Error fetching candidates:', err);
@@ -372,9 +411,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Open Employer Detail Modal
   const openEmployerModal = async (emp: EmployerRequirementRecord) => {
     try {
-      const res = await fetch(`/api/admin/employer-requirements/${emp.requirement_id}`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
+      const res = await authFetch(`/api/admin/employer-requirements/${emp.requirement_id}`);
       const data = await res.json();
       const record = data.success ? data.data : emp;
       setSelectedEmployer(record);
@@ -397,9 +434,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Open Candidate Detail Modal
   const openCandidateModal = async (cand: EmployeeCandidateRecord) => {
     try {
-      const res = await fetch(`/api/admin/job-seekers/${cand.candidate_id}`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
+      const res = await authFetch(`/api/admin/job-seekers/${cand.candidate_id}`);
       const data = await res.json();
       const record = data.success ? data.data : cand;
       setSelectedCandidate(record);
@@ -428,11 +463,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setErrorMessage(null);
 
     try {
-      const res = await fetch(`/api/admin/employer-requirements/${selectedEmployer.requirement_id}/status`, {
+      const res = await authFetch(`/api/admin/employer-requirements/${selectedEmployer.requirement_id}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           status: newStatus,
@@ -481,11 +515,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setErrorMessage(null);
 
     try {
-      const res = await fetch(`/api/admin/job-seekers/${selectedCandidate.candidate_id}/status`, {
+      const res = await authFetch(`/api/admin/job-seekers/${selectedCandidate.candidate_id}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
           status: newStatus,
@@ -529,9 +562,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ? `/api/admin/export/employer-requirements?format=${format}`
         : `/api/admin/export/job-seekers?format=${format}`;
 
-    // Trigger download with auth header using fetch & blob
-    fetch(endpoint, {
-      headers: { Authorization: `Bearer ${adminToken}` },
+    // Trigger download with auth header using authFetch & blob
+    authFetch(endpoint, {
+      method: 'GET',
     })
       .then((res) => res.blob())
       .then((blob) => {

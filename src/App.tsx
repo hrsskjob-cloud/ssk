@@ -10,9 +10,18 @@ import { AdminLogin } from './components/AdminLogin.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import { PrivacyPolicy } from './components/PrivacyPolicy.tsx';
 import { AppView, ImpactStats, SubmissionConfirmationData } from './types.ts';
+import { supabase } from './lib/supabase.ts';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<AppView>('home');
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    const saved = localStorage.getItem('sskj_current_view') as AppView | null;
+    const token = localStorage.getItem('sskj_admin_token');
+    if (saved === 'admin-dashboard' && token) {
+      return 'admin-dashboard';
+    }
+    return saved || 'home';
+  });
+
   const [impactStats, setImpactStats] = useState<ImpactStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
@@ -26,7 +35,14 @@ export default function App() {
   const [adminToken, setAdminToken] = useState<string | null>(() => {
     return localStorage.getItem('sskj_admin_token');
   });
-  const [adminUsername, setAdminUsername] = useState<string>('admin');
+  const [adminUsername, setAdminUsername] = useState<string>(() => {
+    return localStorage.getItem('sskj_admin_username') || 'hrsskjon@gmail.com';
+  });
+
+  // Track initial authentication verification so we don't flash login or prematurely redirect
+  const [authChecking, setAuthChecking] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('sskj_admin_token'));
+  });
 
   // Load live community impact metrics
   const fetchImpactStats = async () => {
@@ -46,28 +62,88 @@ export default function App() {
 
   useEffect(() => {
     fetchImpactStats();
-    if (adminToken) {
-      fetch('/api/admin/verify-session', {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      })
-        .then((res) => {
-          if (!res.ok) {
-            localStorage.removeItem('sskj_admin_token');
-            setAdminToken(null);
+
+    // Verify session state and restore Supabase session
+    const initAuth = async () => {
+      try {
+        let tokenToVerify = adminToken || localStorage.getItem('sskj_admin_token');
+
+        // Check Supabase Auth client session
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          tokenToVerify = session.access_token;
+          setAdminToken(session.access_token);
+          localStorage.setItem('sskj_admin_token', session.access_token);
+          if (session.user?.email) {
+            setAdminUsername(session.user.email);
+            localStorage.setItem('sskj_admin_username', session.user.email);
           }
-        })
-        .catch(() => {});
-    }
+        }
+
+        if (tokenToVerify) {
+          const res = await fetch('/api/admin/verify-session', {
+            headers: { Authorization: `Bearer ${tokenToVerify}` },
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.username) {
+              setAdminUsername(data.username);
+              localStorage.setItem('sskj_admin_username', data.username);
+            }
+          } else if (res.status === 401 && !session?.access_token) {
+            // Only invalidate if both backend rejected and no active Supabase session
+            localStorage.removeItem('sskj_admin_token');
+            localStorage.removeItem('sskj_admin_username');
+            setAdminToken(null);
+            if (currentView === 'admin-dashboard') {
+              setCurrentView('admin-login');
+              localStorage.setItem('sskj_current_view', 'admin-login');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Session verification note:', err);
+      } finally {
+        setAuthChecking(false);
+      }
+    };
+
+    initAuth();
+
+    // Listen for auth state changes from Supabase client (e.g. token refreshed)
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session?.access_token) {
+            setAdminToken(session.access_token);
+            localStorage.setItem('sskj_admin_token', session.access_token);
+            if (session.user?.email) {
+              setAdminUsername(session.user.email);
+              localStorage.setItem('sskj_admin_username', session.user.email);
+            }
+          }
+        } else if (event === 'SIGNED_OUT') {
+          // Do not kick out if server token is active unless user explicitly logged out
+        }
+      }
+    );
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
 
   const handleNavigate = (view: AppView) => {
     setCurrentView(view);
+    localStorage.setItem('sskj_current_view', view);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleEmployerSuccess = (data: SubmissionConfirmationData) => {
     setSubmissionData(data);
     setCurrentView('submission-success');
+    localStorage.setItem('sskj_current_view', 'submission-success');
     fetchImpactStats();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -75,6 +151,7 @@ export default function App() {
   const handleCandidateSuccess = (data: SubmissionConfirmationData) => {
     setSubmissionData(data);
     setCurrentView('submission-success');
+    localStorage.setItem('sskj_current_view', 'submission-success');
     fetchImpactStats();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -82,18 +159,34 @@ export default function App() {
   const handleCheckStatus = (id?: string) => {
     if (id) setStatusId(id);
     setCurrentView('check-status');
+    localStorage.setItem('sskj_current_view', 'check-status');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAdminLoginSuccess = (token: string, username: string) => {
     setAdminToken(token);
     setAdminUsername(username);
+    setAuthChecking(false);
     setCurrentView('admin-dashboard');
+    localStorage.setItem('sskj_current_view', 'admin-dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = async () => {
+    try {
+      if (adminToken) {
+        await fetch('/api/admin/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+      }
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Logout cleanup exception:', e);
+    }
     localStorage.removeItem('sskj_admin_token');
+    localStorage.removeItem('sskj_admin_username');
+    localStorage.setItem('sskj_current_view', 'home');
     setAdminToken(null);
     setCurrentView('home');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -160,7 +253,12 @@ export default function App() {
         )}
 
         {currentView === 'admin-dashboard' && (
-          adminToken ? (
+          authChecking ? (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center p-8">
+              <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4" />
+              <p className="text-sm font-semibold text-slate-600">Verifying administrator session...</p>
+            </div>
+          ) : adminToken ? (
             <AdminDashboard
               adminToken={adminToken}
               adminUsername={adminUsername}

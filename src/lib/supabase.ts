@@ -11,11 +11,14 @@ const supabaseAnonKey =
 
 /**
  * Standard Supabase client instance for client-side queries, auth, or realtime subscriptions
+ * Configured with active session persistence and automatic token refresh.
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
   },
 });
 

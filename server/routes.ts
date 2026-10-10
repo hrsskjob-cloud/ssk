@@ -20,11 +20,55 @@ export const router = express.Router();
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "sskadmin2026";
 
+export function extractBearerToken(req: Request): string | undefined {
+  const authHeader = req.headers.authorization || (req.headers as any)?.Authorization;
+  if (typeof authHeader === "string" && authHeader.trim()) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match && match[1]) return match[1].trim();
+    return authHeader.trim();
+  }
+
+  const queryToken = req.query?.token;
+  if (typeof queryToken === "string" && queryToken.trim()) {
+    return queryToken.trim();
+  }
+
+  const customHeader = req.headers["x-admin-token"];
+  if (typeof customHeader === "string" && customHeader.trim()) {
+    return customHeader.trim();
+  }
+
+  return undefined;
+}
+
 // In-memory / DB session store for admin tokens
 async function validateAdminToken(token: string | undefined): Promise<boolean> {
   if (!token) return false;
   const now = Date.now();
 
+  // 1. Verify Supabase JWT access token if present
+  if (token.startsWith("ey")) {
+    try {
+      const { data, error } = await supabaseClient.auth.getUser(token);
+      if (!error && data?.user) {
+        const email = (data.user.email || "").toLowerCase();
+        const role = data.user.user_metadata?.role;
+        if (
+          role === "super_admin" ||
+          role === "admin" ||
+          email === "hrsskjon@gmail.com" ||
+          email === "hrsskjob@gmail.com" ||
+          email === ADMIN_USERNAME.toLowerCase()
+        ) {
+          return true;
+        }
+      }
+    } catch (jwtErr: any) {
+      console.warn("DEBUG [validateAdminToken]: Supabase JWT verify error:", jwtErr?.message);
+    }
+  }
+
+  // 2. Check local SQLite DB session table
   try {
     const db = await getDb();
     const stmt = db.prepare("SELECT * FROM admin_sessions WHERE token = ? AND expires_at > ?");
@@ -34,7 +78,7 @@ async function validateAdminToken(token: string | undefined): Promise<boolean> {
     if (valid) return true;
   } catch {}
 
-  // Fallback to Supabase cloud admin_sessions
+  // 3. Fallback to Supabase cloud PostgreSQL admin_sessions
   try {
     const res = await pgPool.query(
       "SELECT token, username, expires_at FROM admin_sessions WHERE token = $1 AND expires_at > $2 LIMIT 1",
@@ -868,11 +912,13 @@ router.post("/admin/login", async (req: Request, res: Response) => {
 });
 
 router.post("/admin/logout", async (req: Request, res: Response) => {
-  const token = req.headers.authorization?.replace("Bearer ", "");
+  const token = extractBearerToken(req);
   if (token) {
-    const db = await getDb();
-    db.run("DELETE FROM admin_sessions WHERE token = ?", [token]);
-    saveDb();
+    try {
+      const db = await getDb();
+      db.run("DELETE FROM admin_sessions WHERE token = ?", [token]);
+      saveDb();
+    } catch {}
 
     try {
       await pgPool.query("DELETE FROM admin_sessions WHERE token = $1", [token]);
@@ -882,17 +928,48 @@ router.post("/admin/logout", async (req: Request, res: Response) => {
 });
 
 router.get("/admin/verify-session", async (req: Request, res: Response) => {
-  const token = req.headers.authorization?.replace("Bearer ", "");
+  const token = extractBearerToken(req);
   const isValid = await validateAdminToken(token);
   if (!isValid) {
     return res.status(401).json({ success: false, message: "Session invalid or expired." });
   }
-  res.json({ success: true, username: "Admin" });
+
+  let username = "hrsskjon@gmail.com";
+  let role = "super_admin";
+  let fullName = "SSK Platform Administrator";
+
+  if (token && token.startsWith("ey")) {
+    try {
+      const { data } = await supabaseClient.auth.getUser(token);
+      if (data?.user?.email) username = data.user.email;
+      if (data?.user?.user_metadata?.role) role = data.user.user_metadata.role;
+      if (data?.user?.user_metadata?.full_name) fullName = data.user.user_metadata.full_name;
+    } catch {}
+  } else if (token) {
+    try {
+      const db = await getDb();
+      const stmt = db.prepare("SELECT username FROM admin_sessions WHERE token = ?");
+      stmt.bind([token]);
+      if (stmt.step()) {
+        const obj = stmt.getAsObject();
+        username = obj.username || username;
+      }
+      stmt.free();
+    } catch {}
+  }
+
+  res.json({
+    success: true,
+    username,
+    role,
+    fullName,
+    message: "Session is active and verified."
+  });
 });
 
 // Middleware for Admin API routes
 async function requireAdmin(req: Request, res: Response, next: Function) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
+  const token = extractBearerToken(req);
   const isValid = await validateAdminToken(token);
   if (!isValid) {
     return res.status(401).json({ success: false, message: "Admin access required." });
@@ -1493,7 +1570,7 @@ router.get("/supabase/status", async (_req: Request, res: Response) => {
 
 router.post("/supabase/sync", async (req: Request, res: Response) => {
   try {
-    const adminToken = req.headers.authorization?.replace("Bearer ", "");
+    const adminToken = extractBearerToken(req);
     const isValidAdmin = await validateAdminToken(adminToken);
     if (!isValidAdmin) {
       return res.status(401).json({ success: false, message: "Unauthorized. Admin credentials required." });
