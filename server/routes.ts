@@ -1299,8 +1299,46 @@ router.get("/admin/employee-candidates-counts", requireAdmin, async (req: Reques
 router.get("/admin/employer-requirements", requireAdmin, async (req: Request, res: Response) => {
   try {
     const { status, location, department, jobTitle, search } = req.query;
-    const db = await getDb();
 
+    // 1. Try PostgreSQL cloud fetch
+    try {
+      let sql = "SELECT * FROM employer_requirements WHERE 1=1";
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (status) {
+        sql += ` AND status = $${paramIndex++}`;
+        params.push(status);
+      }
+      if (location) {
+        sql += ` AND job_location ILIKE $${paramIndex++}`;
+        params.push(`%${location}%`);
+      }
+      if (department) {
+        sql += ` AND department ILIKE $${paramIndex++}`;
+        params.push(`%${department}%`);
+      }
+      if (jobTitle) {
+        sql += ` AND job_title ILIKE $${paramIndex++}`;
+        params.push(`%${jobTitle}%`);
+      }
+      if (search) {
+        sql += ` AND (contact_name ILIKE $${paramIndex} OR mobile ILIKE $${paramIndex} OR job_title ILIKE $${paramIndex} OR requirement_id ILIKE $${paramIndex})`;
+        const s = `%${search}%`;
+        params.push(s, s, s, s);
+        paramIndex++;
+      }
+
+      sql += " ORDER BY id DESC";
+
+      const resPg = await pgPool.query(sql, params);
+      return res.json({ success: true, data: resPg.rows });
+    } catch (pgErr) {
+      console.warn("Postgres fetch employer requirements failed, falling back to SQLite:", pgErr);
+    }
+
+    // 2. Fallback to SQLite
+    const db = await getDb();
     let sql = "SELECT * FROM employer_requirements WHERE 1=1";
     const params: any[] = [];
 
@@ -1469,8 +1507,54 @@ router.delete("/admin/employer-requirements/:id", requireAdmin, async (req: Requ
 router.get("/admin/job-seekers", requireAdmin, async (req: Request, res: Response) => {
   try {
     const { status, location, qualification, skills, experience, immediate_joiner, search } = req.query;
-    const db = await getDb();
 
+    // 1. Try PostgreSQL cloud fetch
+    try {
+      let sql = "SELECT * FROM employee_candidates WHERE 1=1";
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (status) {
+        sql += ` AND status = $${paramIndex++}`;
+        params.push(status);
+      }
+      if (location) {
+        sql += ` AND current_location ILIKE $${paramIndex++}`;
+        params.push(`%${location}%`);
+      }
+      if (qualification) {
+        sql += ` AND qualification ILIKE $${paramIndex++}`;
+        params.push(`%${qualification}%`);
+      }
+      if (skills) {
+        sql += ` AND skills ILIKE $${paramIndex++}`;
+        params.push(`%${skills}%`);
+      }
+      if (experience) {
+        sql += ` AND total_experience ILIKE $${paramIndex++}`;
+        params.push(`%${experience}%`);
+      }
+      if (immediate_joiner !== undefined && immediate_joiner !== "") {
+        sql += ` AND immediate_joiner = $${paramIndex++}`;
+        params.push(immediate_joiner === "1" || immediate_joiner === "true" ? 1 : 0);
+      }
+      if (search) {
+        sql += ` AND (full_name ILIKE $${paramIndex} OR mobile ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR candidate_id ILIKE $${paramIndex})`;
+        const s = `%${search}%`;
+        params.push(s, s, s, s);
+        paramIndex++;
+      }
+
+      sql += " ORDER BY id DESC";
+
+      const resPg = await pgPool.query(sql, params);
+      return res.json({ success: true, data: resPg.rows });
+    } catch (pgErr) {
+      console.warn("Postgres fetch job seekers failed, falling back to SQLite:", pgErr);
+    }
+
+    // 2. Fallback to SQLite
+    const db = await getDb();
     let sql = "SELECT * FROM employee_candidates WHERE 1=1";
     const params: any[] = [];
 
