@@ -71,8 +71,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Data lists
   const [employers, setEmployers] = useState<EmployerRequirementRecord[]>([]);
   const [candidates, setCandidates] = useState<EmployeeCandidateRecord[]>([]);
-  const [allEmployers, setAllEmployers] = useState<EmployerRequirementRecord[]>([]);
-  const [allCandidates, setAllCandidates] = useState<EmployeeCandidateRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -111,46 +109,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { label: 'Rejected', value: 'Rejected', dotClass: 'bg-rose-500' },
   ];
 
-  // Live status-wise count calculation
-  const employerStatusCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      'All': allEmployers.length,
-      'Submitted': 0,
-      'Sourcing': 0,
-      'Interview Scheduled': 0,
-      'Offer Letter': 0,
-      'Placement Successful': 0,
-      'Rejected': 0,
-    };
-    for (const emp of allEmployers) {
-      if (counts[emp.status] !== undefined) {
-        counts[emp.status]++;
-      } else {
-        counts[emp.status] = (counts[emp.status] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [allEmployers]);
+  // Live status-wise count state
+  const [employerStatusCounts, setEmployerStatusCounts] = useState<Record<string, number>>({});
+  const [candidateStatusCounts, setCandidateStatusCounts] = useState<Record<string, number>>({});
 
-  const candidateStatusCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      'All': allCandidates.length,
-      'Applied': 0,
-      'Validation': 0,
-      'Interview Scheduled': 0,
-      'Offer Letter': 0,
-      'Hired': 0,
-      'Rejected': 0,
-    };
-    for (const cand of allCandidates) {
-      if (counts[cand.status] !== undefined) {
-        counts[cand.status]++;
-      } else {
-        counts[cand.status] = (counts[cand.status] || 0) + 1;
+  const fetchEmployerStatusCounts = async () => {
+    try {
+      const response = await authFetch('/api/admin/employer-requirements-counts');
+      const data = await response.json();
+      if (data.success) {
+        setEmployerStatusCounts(data.data);
       }
+    } catch (err) {
+      console.error('Failed to fetch employer counts', err);
     }
-    return counts;
-  }, [allCandidates]);
+  };
+
+  const fetchCandidateStatusCounts = async () => {
+    try {
+      const response = await authFetch('/api/admin/employee-candidates-counts');
+      const data = await response.json();
+      if (data.success) {
+        setCandidateStatusCounts(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch candidate counts', err);
+    }
+  };
 
   // Detail / Status Modal State
   const [selectedEmployer, setSelectedEmployer] = useState<EmployerRequirementRecord | null>(null);
@@ -186,8 +171,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchKpis();
     fetchEmployers();
     fetchCandidates();
-    fetchAllEmployers();
-    fetchAllCandidates();
+    fetchEmployerStatusCounts();
+    fetchCandidateStatusCounts();
     fetchSupabaseStatus();
 
     // Subscribe to Realtime changes
@@ -198,7 +183,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { event: '*', schema: 'public', table: 'employer_requirements' },
         (payload) => {
           console.log('Employer change detected:', payload);
-          fetchAllEmployers(); // Refetch all for accurate counts
+          fetchEmployerStatusCounts();
           fetchEmployers();    // Refetch filtered for current view
           fetchKpis();
         }
@@ -212,7 +197,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { event: '*', schema: 'public', table: 'employee_candidates' },
         (payload) => {
           console.log('Candidate change detected:', payload);
-          fetchAllCandidates(); // Refetch all for accurate counts
+          fetchCandidateStatusCounts();
           fetchCandidates();    // Refetch filtered for current view
           fetchKpis();
         }
@@ -321,33 +306,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const fetchAllEmployers = async () => {
-    try {
-      const res = await authFetch('/api/admin/employer-requirements');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setAllEmployers(data.data);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching all employers:', err);
-    }
-  };
-
-  const fetchAllCandidates = async () => {
-    try {
-      const res = await authFetch('/api/admin/job-seekers');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setAllCandidates(data.data);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching all candidates:', err);
-    }
-  };
 
   const fetchEmployers = async (
     statusOverride?: string,
@@ -909,7 +867,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onClick={() => handleNavigateToEmployerStatus('')}
                   className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center space-x-1"
                 >
-                  <span>View All ({allEmployers.length})</span>
+                  <span>View All ({Object.values(employerStatusCounts).reduce((a, b) => a + b, 0)})</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -958,7 +916,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onClick={() => handleNavigateToCandidateStatus('')}
                   className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center space-x-1"
                 >
-                  <span>View All ({allCandidates.length})</span>
+                  <span>View All ({Object.values(candidateStatusCounts).reduce((a, b) => a + b, 0)})</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>

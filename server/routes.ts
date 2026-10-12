@@ -1235,6 +1235,64 @@ router.get("/admin/kpis", requireAdmin, async (req: Request, res: Response) => {
   }
 });
 
+router.get("/admin/employer-requirements-counts", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    // 1. Try PostgreSQL cloud count
+    try {
+      const resPg = await pgPool.query("SELECT status, COUNT(*) as count FROM employer_requirements GROUP BY status");
+      const counts: Record<string, number> = {};
+      resPg.rows.forEach(row => {
+        counts[row.status as string] = parseInt(row.count as string, 10);
+      });
+      return res.json({ success: true, data: counts });
+    } catch (pgErr) {
+      console.warn("Postgres count failed, falling back to SQLite:", pgErr);
+    }
+    
+    // 2. Fallback to SQLite
+    const db = await getDb();
+    const stmt = db.prepare("SELECT status, COUNT(*) as count FROM employer_requirements GROUP BY status");
+    const counts: Record<string, number> = {};
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      counts[row.status as string] = row.count as number;
+    }
+    stmt.free();
+    res.json({ success: true, data: counts });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get("/admin/employee-candidates-counts", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    // 1. Try PostgreSQL cloud count
+    try {
+      const resPg = await pgPool.query("SELECT status, COUNT(*) as count FROM employee_candidates GROUP BY status");
+      const counts: Record<string, number> = {};
+      resPg.rows.forEach(row => {
+        counts[row.status as string] = parseInt(row.count as string, 10);
+      });
+      return res.json({ success: true, data: counts });
+    } catch (pgErr) {
+      console.warn("Postgres count failed, falling back to SQLite:", pgErr);
+    }
+
+    // 2. Fallback to SQLite
+    const db = await getDb();
+    const stmt = db.prepare("SELECT status, COUNT(*) as count FROM employee_candidates GROUP BY status");
+    const counts: Record<string, number> = {};
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      counts[row.status as string] = row.count as number;
+    }
+    stmt.free();
+    res.json({ success: true, data: counts });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 7. ADMIN: EMPLOYER REQUIREMENTS (List & Filter)
 // -------------------------------------------------------------
