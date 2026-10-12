@@ -145,7 +145,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   const faqItems = [
     {
       q: 'Is this recruitment service completely free for candidates and employers?',
-      a: 'Yes, 100% free. SSK Job Network is an official welfare initiative by SSK People Foundation. No registration fees, placement cuts, or hidden commissions are ever collected from applicants or business owners.',
+      a: 'Yes, 100% free. SSK Job Network is an official welfare initiative by SSK People Foundation. No registration fees, placement cuts. Concessional fees are charged for SSK Business Owners, to maintain the platform successfully.',
     },
     {
       q: 'How do I check my application or requirement status without a login password?',
@@ -657,7 +657,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               <div>
                 <h4 className="text-sm font-bold text-slate-900">Zero Commercial Exploitation</h4>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  No candidate registration charges, placement cuts, or hidden commissions. Pure community welfare service.
+                  No candidate registration charges, placement cuts. Concessional fees are charged for SSK Business Owners, to maintain the platform successfully. Pure community welfare service.
                 </p>
               </div>
             </div>
