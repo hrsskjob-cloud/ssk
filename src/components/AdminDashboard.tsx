@@ -277,10 +277,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setFeedbackMessage('Database synchronized with Supabase PostgreSQL cloud successfully!');
         setSupabaseStatus(data.data);
         fetchKpis();
-        fetchEmployers();
-        fetchCandidates();
-        fetchAllEmployers();
-        fetchAllCandidates();
+        fetchEmployers('');
+        fetchCandidates('');
         onRefreshPublicStats();
       } else {
         throw new Error(data.message || 'Sync failed');
@@ -486,8 +484,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setTimeout(() => setFeedbackMessage(null), 4000);
 
       // Refresh records and close modal
-      fetchEmployers();
-      fetchAllEmployers();
+      fetchEmployers('');
       fetchKpis();
       onRefreshPublicStats();
       setSelectedEmployer(null); // Close modal
@@ -535,8 +532,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setFeedbackMessage(data.message);
       setTimeout(() => setFeedbackMessage(null), 4000);
 
-      fetchCandidates();
-      fetchAllCandidates();
+      fetchCandidates('');
       fetchKpis();
       onRefreshPublicStats();
       setSelectedCandidate(null); // Close modal
@@ -715,7 +711,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-400 font-mono">
-                        Host: {supabaseStatus?.host || 'db.yvmwueebtltbbgydkyzk.supabase.co'} • Project: {supabaseStatus?.projectUrl ? supabaseStatus.projectUrl.replace('https://', '').split('.')[0] : 'yvmwueebtltbbgydkyzk'}
+                        Host: {supabaseStatus?.host || 'db.yvmwueebtltbbgydkyzk.supabase.co'} • Project: {supabaseStatus?.projectUrl?.replace('https://', '').split('.')[0] || 'yvmwueebtltbbgydkyzk'}
                       </p>
                     </div>
                   </div>
@@ -726,14 +722,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div>
                       <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Cloud Latency</span>
                       <span className="font-bold font-mono text-emerald-400">
-                        {supabaseStatus?.latencyMs ? `${supabaseStatus.latencyMs} ms` : 'Active'}
+                        {supabaseStatus?.latencyMs ? `${supabaseStatus?.latencyMs} ms` : 'Active'}
                       </span>
                     </div>
                     <div className="h-6 w-px bg-slate-700" />
                     <div>
                       <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Synced Records</span>
                       <span className="font-bold font-mono text-white">
-                        {(supabaseStatus?.counts.employers ?? 0) + (supabaseStatus?.counts.candidates ?? 0) + (supabaseStatus?.counts.history ?? 0)}
+                        {(supabaseStatus?.counts?.employers ?? 0) + (supabaseStatus?.counts?.candidates ?? 0) + (supabaseStatus?.counts?.history ?? 0)}
                       </span>
                     </div>
                     <div className="h-6 w-px bg-slate-700" />
