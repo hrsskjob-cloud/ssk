@@ -189,6 +189,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchAllEmployers();
     fetchAllCandidates();
     fetchSupabaseStatus();
+
+    // Subscribe to Realtime changes
+    const employerChannel = supabase
+      .channel('employer-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'employer_requirements' },
+        (payload) => {
+          console.log('Employer change detected:', payload);
+          fetchAllEmployers(); // Refetch all for accurate counts
+          fetchEmployers();    // Refetch filtered for current view
+          fetchKpis();
+        }
+      )
+      .subscribe();
+
+    const candidateChannel = supabase
+      .channel('candidate-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'employee_candidates' },
+        (payload) => {
+          console.log('Candidate change detected:', payload);
+          fetchAllCandidates(); // Refetch all for accurate counts
+          fetchCandidates();    // Refetch filtered for current view
+          fetchKpis();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(employerChannel);
+      supabase.removeChannel(candidateChannel);
+    };
   }, [adminToken]);
 
   // Authenticated fetch wrapper that attaches token, handles token refresh and prevents spurious logouts
