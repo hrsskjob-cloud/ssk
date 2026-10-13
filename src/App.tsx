@@ -36,7 +36,7 @@ export default function App() {
     return localStorage.getItem('sskj_admin_token');
   });
   const [adminUsername, setAdminUsername] = useState<string>(() => {
-    return localStorage.getItem('sskj_admin_username') || 'hrsskjon@gmail.com';
+    return localStorage.getItem('sskj_admin_username') || '';
   });
 
   // Track initial authentication verification so we don't flash login or prematurely redirect

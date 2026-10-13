@@ -29,6 +29,8 @@ import {
   Server,
   Layers,
   Sparkles,
+  Globe,
+  Edit3,
 } from 'lucide-react';
 import {
   EmployerRequirementRecord,
@@ -118,7 +120,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const response = await authFetch('/api/admin/employer-requirements-counts');
       const data = await response.json();
       if (data.success) {
-        setEmployerStatusCounts(data.data);
+        const normalized: Record<string, number> = {};
+        Object.entries(data.data).forEach(([key, value]) => {
+          normalized[key.toLowerCase().trim()] = value as number;
+        });
+        setEmployerStatusCounts(normalized);
       }
     } catch (err) {
       console.error('Failed to fetch employer counts', err);
@@ -130,7 +136,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const response = await authFetch('/api/admin/employee-candidates-counts');
       const data = await response.json();
       if (data.success) {
-        setCandidateStatusCounts(data.data);
+        const normalized: Record<string, number> = {};
+        Object.entries(data.data).forEach(([key, value]) => {
+          normalized[key.toLowerCase().trim()] = value as number;
+        });
+        setCandidateStatusCounts(normalized);
       }
     } catch (err) {
       console.error('Failed to fetch candidate counts', err);
@@ -153,6 +163,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [placementOrHiredDate, setPlacementOrHiredDate] = useState('');
   const [annualPackage, setAnnualPackage] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Editable employer fields
+  const [editBusinessName, setEditBusinessName] = useState('');
+  const [editCompanyWebsite, setEditCompanyWebsite] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
 
   // Supabase Cloud Database Status
   const [supabaseStatus, setSupabaseStatus] = useState<{
@@ -416,6 +432,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setOfferDate(record.offer_date || '');
       setPlacementOrHiredDate(record.placement_date || new Date().toISOString().slice(0, 10));
       setAnnualPackage(record.annual_package ? String(record.annual_package) : '');
+      setEditBusinessName(record.business_name || '');
+      setEditCompanyWebsite(record.company_website || '');
+      setEditEmail(record.email || '');
+      setIsEditingDetails(false);
     } catch (err) {
       console.error(err);
     }
@@ -472,6 +492,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             newStatus === 'Placement Successful' || newStatus === 'Offer Letter'
               ? annualPackage
               : undefined,
+          business_name: isEditingDetails ? editBusinessName : undefined,
+          company_website: isEditingDetails ? editCompanyWebsite : undefined,
+          email: isEditingDetails ? editEmail : undefined,
         }),
       });
 
@@ -870,7 +893,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                 {employerStatusList.filter((s) => s.value !== '').map((item) => {
-                  const count = employerStatusCounts[item.value] || 0;
+                  const count = employerStatusCounts[item.value.toLowerCase().trim()] || 0;
                   const badge = getStatusBadgeClass(item.value);
                   return (
                     <button
@@ -919,7 +942,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                 {candidateStatusList.filter((s) => s.value !== '').map((item) => {
-                  const count = candidateStatusCounts[item.value] || 0;
+                  const count = candidateStatusCounts[item.value.toLowerCase().trim()] || 0;
                   return (
                     <button
                       key={item.value}
@@ -1101,13 +1124,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   }}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
                 >
-                  <option value="">All Statuses ({employerStatusCounts['All'] || employers.length})</option>
-                  <option value="Submitted">Submitted ({employerStatusCounts['Submitted'] || 0})</option>
-                  <option value="Sourcing">Sourcing ({employerStatusCounts['Sourcing'] || 0})</option>
-                  <option value="Interview Scheduled">Interview Scheduled ({employerStatusCounts['Interview Scheduled'] || 0})</option>
-                  <option value="Offer Letter">Offer Letter ({employerStatusCounts['Offer Letter'] || 0})</option>
-                  <option value="Placement Successful">Placement Successful ({employerStatusCounts['Placement Successful'] || 0})</option>
-                  <option value="Rejected">Rejected ({employerStatusCounts['Rejected'] || 0})</option>
+                  <option value="">All Statuses ({employerStatusCounts['all'] || employers.length})</option>
+                  <option value="Submitted">Submitted ({employerStatusCounts['submitted'.toLowerCase().trim()] || 0})</option>
+                  <option value="Sourcing">Sourcing ({employerStatusCounts['sourcing'.toLowerCase().trim()] || 0})</option>
+                  <option value="Interview Scheduled">Interview Scheduled ({employerStatusCounts['interview scheduled'.toLowerCase().trim()] || 0})</option>
+                  <option value="Offer Letter">Offer Letter ({employerStatusCounts['offer letter'.toLowerCase().trim()] || 0})</option>
+                  <option value="Placement Successful">Placement Successful ({employerStatusCounts['placement successful'.toLowerCase().trim()] || 0})</option>
+                  <option value="Rejected">Rejected ({employerStatusCounts['rejected'.toLowerCase().trim()] || 0})</option>
                 </select>
               </div>
 
@@ -1168,6 +1191,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {emp.requirement_id}
                           </td>
                           <td className="py-3.5 px-4">
+                            {emp.business_name && (
+                              <span className="inline-block text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200/90 px-1.5 py-0.5 rounded-md mb-1">
+                                {emp.business_name}
+                              </span>
+                            )}
                             <p className="font-semibold text-slate-900">{emp.position_name}</p>
                             <p className="text-[11px] text-slate-500">{emp.job_title} • {emp.department}</p>
                           </td>
@@ -1297,13 +1325,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onChange={(e) => handleCandStatusSelect(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                 >
-                  <option value="">All Statuses ({candidateStatusCounts['All'] || candidates.length})</option>
-                  <option value="Applied">Applied ({candidateStatusCounts['Applied'] || 0})</option>
-                  <option value="Validation">Validation ({candidateStatusCounts['Validation'] || 0})</option>
-                  <option value="Interview Scheduled">Interview Scheduled ({candidateStatusCounts['Interview Scheduled'] || 0})</option>
-                  <option value="Offer Letter">Offer Letter ({candidateStatusCounts['Offer Letter'] || 0})</option>
-                  <option value="Hired">Hired ({candidateStatusCounts['Hired'] || 0})</option>
-                  <option value="Rejected">Rejected ({candidateStatusCounts['Rejected'] || 0})</option>
+                  <option value="">All Statuses ({candidateStatusCounts['all'] || candidates.length})</option>
+                  <option value="Applied">Applied ({candidateStatusCounts['applied'.toLowerCase().trim()] || 0})</option>
+                  <option value="Validation">Validation ({candidateStatusCounts['validation'.toLowerCase().trim()] || 0})</option>
+                  <option value="Interview Scheduled">Interview Scheduled ({candidateStatusCounts['interview scheduled'.toLowerCase().trim()] || 0})</option>
+                  <option value="Offer Letter">Offer Letter ({candidateStatusCounts['offer letter'.toLowerCase().trim()] || 0})</option>
+                  <option value="Hired">Hired ({candidateStatusCounts['hired'.toLowerCase().trim()] || 0})</option>
+                  <option value="Rejected">Rejected ({candidateStatusCounts['rejected'.toLowerCase().trim()] || 0})</option>
                 </select>
               </div>
 
@@ -1435,8 +1463,110 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
+            {/* Details Header & Edit Toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Organization & Requirement Details
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsEditingDetails(!isEditingDetails)}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{isEditingDetails ? 'Cancel Editing' : 'Edit Business Details'}</span>
+              </button>
+            </div>
+
+            {/* Editable Fields (When toggle active) */}
+            {isEditingDetails && (
+              <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3 animate-in fade-in">
+                <div className="flex items-center space-x-2 text-xs font-bold text-amber-900">
+                  <Building className="w-4 h-4 text-amber-700" />
+                  <span>Edit Employer & Business Information</span>
+                </div>
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Business Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editBusinessName}
+                      onChange={(e) => setEditBusinessName(e.target.value)}
+                      placeholder="e.g. Somavamsha Silks & Textiles"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Company Website (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={editCompanyWebsite}
+                        onChange={(e) => setEditCompanyWebsite(e.target.value)}
+                        placeholder="e.g. https://www.example.com"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Email Address (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        placeholder="e.g. contact@business.com"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Contact & Job Summary Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl text-xs border border-slate-200">
+              <div className="sm:col-span-2 bg-white p-3 rounded-lg border border-slate-200/80">
+                <span className="text-amber-800 font-bold uppercase text-[10px] block mb-0.5 tracking-wider">Business Name:</span>
+                <span className="text-slate-900 font-bold text-sm flex items-center gap-1.5">
+                  <Building className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{selectedEmployer.business_name || 'Not Specified'}</span>
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-semibold block">Company Website:</span>
+                {selectedEmployer.company_website ? (
+                  <a
+                    href={selectedEmployer.company_website.startsWith('http') ? selectedEmployer.company_website : `https://${selectedEmployer.company_website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-amber-700 hover:text-amber-800 underline font-medium break-all flex items-center gap-1 mt-0.5"
+                  >
+                    <Globe className="w-3.5 h-3.5 shrink-0" />
+                    <span>{selectedEmployer.company_website}</span>
+                  </a>
+                ) : (
+                  <span className="text-slate-400 italic">Not provided</span>
+                )}
+              </div>
+              <div>
+                <span className="text-slate-400 font-semibold block">Email Address:</span>
+                {selectedEmployer.email ? (
+                  <a
+                    href={`mailto:${selectedEmployer.email}`}
+                    className="text-amber-700 hover:text-amber-800 underline font-medium flex items-center gap-1 mt-0.5"
+                  >
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                    <span>{selectedEmployer.email}</span>
+                  </a>
+                ) : (
+                  <span className="text-slate-400 italic">Not provided</span>
+                )}
+              </div>
               <div>
                 <span className="text-slate-400 font-semibold block">Contact Person:</span>
                 <span className="text-slate-900 font-bold">{selectedEmployer.contact_name}</span>

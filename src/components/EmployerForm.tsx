@@ -14,6 +14,8 @@ import {
   ArrowLeft,
   Send,
   Building,
+  Globe,
+  Mail,
 } from 'lucide-react';
 import { SubmissionConfirmationData } from '../types.ts';
 import { supabase } from '../lib/supabase.ts';
@@ -30,6 +32,9 @@ export const EmployerForm: React.FC<EmployerFormProps> = ({
   onCheckStatus,
 }) => {
   const [formData, setFormData] = useState({
+    business_name: '',
+    company_website: '',
+    email: '',
     contact_name: '',
     mobile: '',
     job_title: '',
@@ -57,11 +62,33 @@ export const EmployerForm: React.FC<EmployerFormProps> = ({
   };
 
   const validateForm = () => {
+    // 1. Business Name - Mandatory
+    if (!formData.business_name.trim()) return 'Business Name is required.';
+
+    // 2. Company Website - Optional (validate only when entered)
+    if (formData.company_website.trim()) {
+      const urlPattern = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[^\s]*)?$/i;
+      if (!urlPattern.test(formData.company_website.trim())) {
+        return 'Please enter a valid Company Website URL (e.g. https://www.example.com or example.com).';
+      }
+    }
+
+    // 3. Email Address - Optional (validate only when entered)
+    if (formData.email.trim()) {
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailPattern.test(formData.email.trim())) {
+        return 'Please enter a valid Email Address (e.g. contact@business.com).';
+      }
+    }
+
+    // 4. Contact Information
     if (!formData.contact_name.trim()) return 'Contact Name is required.';
     const cleanMobile = formData.mobile.replace(/\D/g, '');
     if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
       return 'Please enter a valid 10-digit Indian mobile number (e.g. 9845012345).';
     }
+
+    // 5. Job Details
     if (!formData.job_title.trim()) return 'Job Title is required.';
     if (!formData.department.trim()) return 'Department is required.';
     if (!formData.position_name.trim()) return 'Position Name is required.';
@@ -140,6 +167,7 @@ export const EmployerForm: React.FC<EmployerFormProps> = ({
         mobile: formData.mobile,
         name: formData.contact_name,
         titleOrRole: formData.position_name,
+        businessName: formData.business_name,
       });
     } catch (err: any) {
       setErrorMessage(err.message || 'An unexpected network error occurred.');
@@ -231,30 +259,96 @@ export const EmployerForm: React.FC<EmployerFormProps> = ({
 
       {/* Main Form */}
       <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
-        {/* Section 1: Contact Information */}
+        {/* Section 1: Business & Contact Information */}
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
-            <User className="w-4 h-4 text-amber-600" />
+            <Building className="w-4 h-4 text-amber-600" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-              1. Contact Information
+              1. Business & Contact Information
             </h2>
           </div>
 
+          {/* Business Name - Mandatory */}
+          <div>
+            <label htmlFor="business_name" className="block text-xs font-bold text-slate-700 mb-1">
+              Business Name <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <Building className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+              <input
+                id="business_name"
+                name="business_name"
+                type="text"
+                required
+                value={formData.business_name}
+                onChange={handleChange}
+                placeholder="e.g. Somavamsha Silks & Textiles / Shree Enterprises"
+                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Official name of your company, firm, shop, or enterprise.</p>
+          </div>
+
+          {/* Company Website & Email Address - Both Optional */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="company_website" className="block text-xs font-bold text-slate-700 mb-1">
+                Company Website <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
+              </label>
+              <div className="relative">
+                <Globe className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <input
+                  id="company_website"
+                  name="company_website"
+                  type="text"
+                  value={formData.company_website}
+                  onChange={handleChange}
+                  placeholder="e.g. https://www.example.com"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Optional. Link to company website or online portfolio.</p>
+            </div>
+
+            <div>
+              <label htmlFor="email" className="block text-xs font-bold text-slate-700 mb-1">
+                Email Address <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="e.g. contact@business.com"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Optional. For receiving applicant alerts directly.</p>
+            </div>
+          </div>
+
+          {/* Contact Person & Mobile Number - Mandatory */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
             <div>
               <label htmlFor="contact_name" className="block text-xs font-bold text-slate-700 mb-1">
                 Contact Name <span className="text-rose-500">*</span>
               </label>
-              <input
-                id="contact_name"
-                name="contact_name"
-                type="text"
-                required
-                value={formData.contact_name}
-                onChange={handleChange}
-                placeholder="e.g. Suresh Khatri / Organization Head"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-              />
+              <div className="relative">
+                <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <input
+                  id="contact_name"
+                  name="contact_name"
+                  type="text"
+                  required
+                  value={formData.contact_name}
+                  onChange={handleChange}
+                  placeholder="e.g. Suresh Khatri / Organization Head"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                />
+              </div>
             </div>
 
             <div>

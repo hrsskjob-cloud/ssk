@@ -226,7 +226,7 @@ async function getStatusById(cleanId: string) {
     try {
       const empRes = await pgPool.query(`
         SELECT 
-          id, requirement_id, contact_name, mobile, job_title, department, position_name,
+          id, requirement_id, business_name, company_website, email, contact_name, mobile, job_title, department, position_name,
           job_location, qualification, experience_required, skills, job_description,
           salary_range, hiring_deadline, status, submitted_at, status_updated_at,
           interview_date, interview_time, interview_mode, interview_remarks, offer_date, placement_date
@@ -285,7 +285,7 @@ async function getStatusById(cleanId: string) {
     // Check Employer Requirements
     const empStmt = db.prepare(`
       SELECT 
-        id, requirement_id, contact_name, mobile, job_title, department, position_name,
+        id, requirement_id, business_name, company_website, email, contact_name, mobile, job_title, department, position_name,
         job_location, qualification, experience_required, skills, job_description,
         salary_range, hiring_deadline, status, submitted_at, status_updated_at,
         interview_date, interview_time, interview_mode, interview_remarks, offer_date, placement_date
@@ -376,7 +376,7 @@ router.get("/public/jobs", async (req: Request, res: Response) => {
     const db = await getDb();
     const query = `
       SELECT 
-        id, requirement_id, job_title, department, position_name,
+        id, requirement_id, business_name, job_title, department, position_name,
         job_location, qualification, experience_required, skills,
         job_description, salary_range, status, submitted_at
       FROM employer_requirements
@@ -406,6 +406,9 @@ router.get("/public/jobs", async (req: Request, res: Response) => {
 router.post("/employer/register", async (req: Request, res: Response) => {
   try {
     const {
+      business_name,
+      company_website,
+      email,
       contact_name,
       mobile,
       job_title,
@@ -422,7 +425,14 @@ router.post("/employer/register", async (req: Request, res: Response) => {
       user_id,
     } = req.body;
 
-    // Validation
+    // Validation: Business Name is mandatory
+    if (!business_name || !String(business_name).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Business Name is required.",
+      });
+    }
+
     if (
       !contact_name ||
       !mobile ||
@@ -449,6 +459,34 @@ router.post("/employer/register", async (req: Request, res: Response) => {
         success: false,
         message: "Please enter a valid 10-digit Indian mobile number.",
       });
+    }
+
+    // Optional email validation: validate only if non-empty
+    let cleanEmail: string | null = null;
+    if (email && String(email).trim().length > 0) {
+      const trimmedEmail = String(email).trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid email address.",
+        });
+      }
+      cleanEmail = trimmedEmail;
+    }
+
+    // Optional company website validation: validate only if non-empty
+    let cleanWebsite: string | null = null;
+    if (company_website && String(company_website).trim().length > 0) {
+      const trimmedUrl = String(company_website).trim();
+      const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[^\s]*)?$/i;
+      if (!urlRegex.test(trimmedUrl)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid company website URL.",
+        });
+      }
+      cleanWebsite = trimmedUrl;
     }
 
     // Identify authenticated user ID if available
@@ -509,6 +547,9 @@ router.post("/employer/register", async (req: Request, res: Response) => {
     const insertedRecord = await insertEmployerRequirementDirect({
       requirement_id: requirementId,
       user_id: authenticatedUserId,
+      business_name: String(business_name).trim(),
+      company_website: cleanWebsite,
+      email: cleanEmail,
       contact_name: contact_name.trim(),
       mobile: cleanMobile,
       job_title: job_title.trim(),
@@ -528,6 +569,7 @@ router.post("/employer/register", async (req: Request, res: Response) => {
       success: true,
       requirementId: insertedRecord.requirement_id,
       status: insertedRecord.status,
+      businessName: insertedRecord.business_name,
       message: "Requirement Submitted Successfully! Your requirement has been safely saved to SSK JOB.",
     });
   } catch (err: any) {
@@ -1239,7 +1281,7 @@ router.get("/admin/employer-requirements-counts", requireAdmin, async (req: Requ
   try {
     // 1. Try PostgreSQL cloud count
     try {
-      const resPg = await pgPool.query("SELECT status, COUNT(*) as count FROM employer_requirements GROUP BY status");
+      const resPg = await pgPool.query("SELECT LOWER(TRIM(status)) as status, COUNT(*) as count FROM employer_requirements GROUP BY LOWER(TRIM(status))");
       const counts: Record<string, number> = {};
       resPg.rows.forEach(row => {
         counts[row.status as string] = parseInt(row.count as string, 10);
@@ -1268,7 +1310,7 @@ router.get("/admin/employee-candidates-counts", requireAdmin, async (req: Reques
   try {
     // 1. Try PostgreSQL cloud count
     try {
-      const resPg = await pgPool.query("SELECT status, COUNT(*) as count FROM employee_candidates GROUP BY status");
+      const resPg = await pgPool.query("SELECT LOWER(TRIM(status)) as status, COUNT(*) as count FROM employee_candidates GROUP BY LOWER(TRIM(status))");
       const counts: Record<string, number> = {};
       resPg.rows.forEach(row => {
         counts[row.status as string] = parseInt(row.count as string, 10);
@@ -1323,9 +1365,9 @@ router.get("/admin/employer-requirements", requireAdmin, async (req: Request, re
         params.push(`%${jobTitle}%`);
       }
       if (search) {
-        sql += ` AND (contact_name ILIKE $${paramIndex} OR mobile ILIKE $${paramIndex} OR job_title ILIKE $${paramIndex} OR requirement_id ILIKE $${paramIndex})`;
+        sql += ` AND (contact_name ILIKE $${paramIndex} OR mobile ILIKE $${paramIndex} OR job_title ILIKE $${paramIndex} OR requirement_id ILIKE $${paramIndex} OR business_name ILIKE $${paramIndex})`;
         const s = `%${search}%`;
-        params.push(s, s, s, s);
+        params.push(s, s, s, s, s);
         paramIndex++;
       }
 
@@ -1359,9 +1401,9 @@ router.get("/admin/employer-requirements", requireAdmin, async (req: Request, re
       params.push(`%${String(jobTitle).toLowerCase()}%`);
     }
     if (search) {
-      sql += " AND (LOWER(contact_name) LIKE ? OR mobile LIKE ? OR LOWER(job_title) LIKE ? OR requirement_id LIKE ?)";
+      sql += " AND (LOWER(contact_name) LIKE ? OR mobile LIKE ? OR LOWER(job_title) LIKE ? OR requirement_id LIKE ? OR LOWER(business_name) LIKE ?)";
       const s = `%${String(search).toLowerCase()}%`;
-      params.push(s, s, s, s);
+      params.push(s, s, s, s, s);
     }
 
     sql += " ORDER BY id DESC";
@@ -1413,7 +1455,7 @@ router.get("/admin/employer-requirements/:id", requireAdmin, async (req: Request
   }
 });
 
-router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req: Request, res: Response) => {
+router.patch(["/admin/employer-requirements/:id/status", "/admin/employer-requirements/:id"], requireAdmin, async (req: Request, res: Response) => {
   try {
     const id = req.params.id;
     const {
@@ -1427,6 +1469,9 @@ router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req
       offer_date,
       placement_date,
       annual_package,
+      business_name,
+      company_website,
+      email,
     } = req.body;
 
     const db = await getDb();
@@ -1467,6 +1512,9 @@ router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req
         placement_date: effectivePlacementDate,
         annual_package: annual_package !== undefined && annual_package !== "" ? Number(annual_package) : current.annual_package,
         days_to_placement: calculatedDays,
+        business_name: business_name !== undefined ? (business_name ? String(business_name).trim() : null) : current.business_name,
+        company_website: company_website !== undefined ? (company_website ? String(company_website).trim() : null) : current.company_website,
+        email: email !== undefined ? (email ? String(email).trim() : null) : current.email,
       },
       remarks,
       "Admin"
@@ -1479,6 +1527,9 @@ router.patch("/admin/employer-requirements/:id/status", requireAdmin, async (req
         requirement_id: updated.requirement_id,
         status: updated.status,
         days_to_placement: updated.days_to_placement,
+        business_name: updated.business_name,
+        company_website: updated.company_website,
+        email: updated.email,
       },
     });
   } catch (err: any) {
@@ -1730,6 +1781,9 @@ router.get("/admin/export/employer-requirements", requireAdmin, async (req: Requ
     // Map to clean export headers
     const exportData = rows.map((r) => ({
       "Requirement ID": r.requirement_id,
+      "Business Name": r.business_name || "",
+      "Company Website": r.company_website || "",
+      "Email Address": r.email || "",
       "Contact Name": r.contact_name,
       "Mobile Number": r.mobile,
       "Job Title": r.job_title,

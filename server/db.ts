@@ -37,6 +37,9 @@ export interface EmployerRequirement {
   id: number;
   requirement_id: string;
   user_id?: string | null;
+  business_name?: string;
+  company_website?: string | null;
+  email?: string | null;
   contact_name: string;
   mobile: string;
   job_title: string;
@@ -651,6 +654,9 @@ async function initSupabasePostgres(): Promise<void> {
       CREATE TABLE IF NOT EXISTS employer_requirements (
         id SERIAL PRIMARY KEY,
         requirement_id VARCHAR(50) UNIQUE NOT NULL,
+        business_name VARCHAR(255),
+        company_website VARCHAR(255),
+        email VARCHAR(255),
         contact_name VARCHAR(255) NOT NULL,
         mobile VARCHAR(20) NOT NULL,
         job_title VARCHAR(255) NOT NULL,
@@ -746,7 +752,10 @@ async function initSupabasePostgres(): Promise<void> {
 
       -- Ensure user_id and foreign key columns exist
       ALTER TABLE public.employer_requirements 
-      ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+      ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS business_name VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS company_website VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS email VARCHAR(255);
 
       ALTER TABLE public.employee_candidates 
       ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
@@ -757,6 +766,7 @@ async function initSupabasePostgres(): Promise<void> {
       ADD COLUMN IF NOT EXISTS candidate_id INTEGER REFERENCES public.employee_candidates(id) ON DELETE CASCADE;
 
       CREATE INDEX IF NOT EXISTS idx_emp_mobile ON employer_requirements(mobile);
+      CREATE INDEX IF NOT EXISTS idx_emp_business_name ON employer_requirements(business_name);
       CREATE INDEX IF NOT EXISTS idx_cand_mobile ON employee_candidates(mobile);
       CREATE INDEX IF NOT EXISTS idx_status_history_rec ON status_history(record_id);
       CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
@@ -837,6 +847,10 @@ export async function syncFromSupabaseToLocal(db: Database): Promise<void> {
  */
 export async function insertEmployerRequirementDirect(data: {
   requirement_id: string;
+  user_id?: string | null;
+  business_name: string;
+  company_website?: string | null;
+  email?: string | null;
   contact_name: string;
   mobile: string;
   job_title: string;
@@ -850,21 +864,23 @@ export async function insertEmployerRequirementDirect(data: {
   salary_range: string;
   hiring_deadline: string;
   status: string;
-  user_id?: string | null;
   admin_notes?: string | null;
 }): Promise<EmployerRequirement> {
   const client = await pgPool.connect();
   try {
     const res = await client.query(
       `INSERT INTO employer_requirements (
-        requirement_id, user_id, contact_name, mobile, job_title, department, position_name,
+        requirement_id, user_id, business_name, company_website, email, contact_name, mobile, job_title, department, position_name,
         job_location, qualification, experience_required, skills, job_description,
         salary_range, hiring_deadline, status, submitted_at, status_updated_at, admin_notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW(), $16)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW(), $19)
       RETURNING *`,
       [
         data.requirement_id,
         data.user_id || null,
+        data.business_name,
+        data.company_website || null,
+        data.email || null,
         data.contact_name,
         data.mobile,
         data.job_title,
@@ -1036,6 +1052,9 @@ export async function updateEmployerRequirementDirect(
     placement_date?: string | null;
     annual_package?: number | null;
     days_to_placement?: number | null;
+    business_name?: string | null;
+    company_website?: string | null;
+    email?: string | null;
   },
   remarks?: string,
   changedBy: string = "Admin",
@@ -1063,8 +1082,11 @@ export async function updateEmployerRequirementDirect(
         offer_date = COALESCE($7, offer_date),
         placement_date = COALESCE($8, placement_date),
         annual_package = COALESCE($9, annual_package),
-        days_to_placement = COALESCE($10, days_to_placement)
-      WHERE requirement_id = $11
+        days_to_placement = COALESCE($10, days_to_placement),
+        business_name = COALESCE($11, business_name),
+        company_website = COALESCE($12, company_website),
+        email = COALESCE($13, email)
+      WHERE requirement_id = $14
       RETURNING *`,
       [
         newStatus,
@@ -1079,6 +1101,9 @@ export async function updateEmployerRequirementDirect(
           ? Number(updates.annual_package)
           : null,
         updates.days_to_placement !== undefined ? updates.days_to_placement : null,
+        updates.business_name !== undefined ? updates.business_name : null,
+        updates.company_website !== undefined ? updates.company_website : null,
+        updates.email !== undefined ? updates.email : null,
         requirementId,
       ]
     );

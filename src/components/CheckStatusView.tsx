@@ -19,6 +19,7 @@ import {
   RotateCw,
   Printer,
   ChevronRight,
+  Globe,
 } from 'lucide-react';
 import { TimelineView } from './TimelineView.tsx';
 import { formatDate, getStatusBadgeClass } from '../utils/formatters.ts';
@@ -349,7 +350,7 @@ export const CheckStatusView: React.FC<CheckStatusViewProps> = ({
 
                 <p className="text-sm font-semibold text-slate-700 mt-1">
                   {loadedData.type === 'employer'
-                    ? `${loadedData.record.position_name} • ${loadedData.record.job_location}`
+                    ? `${loadedData.record.business_name ? `${loadedData.record.business_name} • ` : ''}${loadedData.record.position_name} • ${loadedData.record.job_location}`
                     : `${loadedData.record.full_name} • ${loadedData.record.qualification}`}
                 </p>
               </div>
@@ -461,6 +462,51 @@ export const CheckStatusView: React.FC<CheckStatusViewProps> = ({
 
               {loadedData.type === 'employer' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                  <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200/90 sm:col-span-2 lg:col-span-1">
+                    <span className="text-amber-800 block mb-0.5 font-bold uppercase text-[10px] tracking-wider">Business Name</span>
+                    <strong className="text-slate-900 text-sm font-bold flex items-center gap-1.5">
+                      <Building className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{loadedData.record.business_name || 'SSK Enterprise'}</span>
+                    </strong>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+                    <span className="text-slate-400 block mb-0.5 font-medium">Company Website</span>
+                    {loadedData.record.company_website ? (
+                      <a
+                        href={loadedData.record.company_website.startsWith('http') ? loadedData.record.company_website : `https://${loadedData.record.company_website}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-amber-700 hover:text-amber-800 underline font-semibold flex items-center gap-1 break-all"
+                      >
+                        <Globe className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{loadedData.record.company_website}</span>
+                      </a>
+                    ) : (
+                      <span className="text-slate-400 italic">Not Provided</span>
+                    )}
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+                    <span className="text-slate-400 block mb-0.5 font-medium">Email Address</span>
+                    {loadedData.record.email ? (
+                      <a
+                        href={`mailto:${loadedData.record.email}`}
+                        className="text-amber-700 hover:text-amber-800 underline font-semibold flex items-center gap-1 break-all"
+                      >
+                        <Mail className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{loadedData.record.email}</span>
+                      </a>
+                    ) : (
+                      <span className="text-slate-400 italic">Not Provided</span>
+                    )}
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+                    <span className="text-slate-400 block mb-0.5 font-medium">Contact Person</span>
+                    <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.contact_name}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+                    <span className="text-slate-400 block mb-0.5 font-medium">Registered Mobile</span>
+                    <strong className="text-slate-900 text-sm font-mono font-semibold">+91 {loadedData.record.mobile}</strong>
+                  </div>
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
                     <span className="text-slate-400 block mb-0.5 font-medium">Position Name</span>
                     <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.position_name}</strong>
@@ -474,16 +520,16 @@ export const CheckStatusView: React.FC<CheckStatusViewProps> = ({
                     <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.job_location}</strong>
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+                    <span className="text-slate-400 block mb-0.5 font-medium">Offered Salary Range</span>
+                    <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.salary_range}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
                     <span className="text-slate-400 block mb-0.5 font-medium">Experience Required</span>
                     <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.experience_required}</strong>
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
                     <span className="text-slate-400 block mb-0.5 font-medium">Qualification</span>
                     <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.qualification}</strong>
-                  </div>
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
-                    <span className="text-slate-400 block mb-0.5 font-medium">Offered Salary Range</span>
-                    <strong className="text-slate-900 text-sm font-semibold">{loadedData.record.salary_range}</strong>
                   </div>
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 sm:col-span-2 lg:col-span-3">
                     <span className="text-slate-400 block mb-0.5 font-medium">Key Skills</span>

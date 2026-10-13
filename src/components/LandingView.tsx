@@ -96,6 +96,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     if (!term) return matchesDept;
 
     const matchesSearch =
+      (job.business_name && job.business_name.toLowerCase().includes(term)) ||
       job.job_title.toLowerCase().includes(term) ||
       job.position_name.toLowerCase().includes(term) ||
       job.job_location.toLowerCase().includes(term) ||
@@ -388,6 +389,11 @@ export const LandingView: React.FC<LandingViewProps> = ({
                       </span>
                     </div>
 
+                    {job.business_name && (
+                      <span className="inline-block text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200/90 px-2 py-0.5 rounded-md mb-1.5">
+                        {job.business_name}
+                      </span>
+                    )}
                     <h3 className="text-base font-bold text-slate-900 leading-snug">
                       {job.position_name}
                     </h3>

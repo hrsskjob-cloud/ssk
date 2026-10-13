@@ -63,6 +63,9 @@ export interface StatusHistoryEntry {
 export interface EmployerRequirementRecord {
   id: number;
   requirement_id: string;
+  business_name?: string;
+  company_website?: string | null;
+  email?: string | null;
   contact_name: string;
   mobile: string;
   job_title: string;
@@ -126,11 +129,13 @@ export interface SubmissionConfirmationData {
   mobile: string;
   name: string;
   titleOrRole: string;
+  businessName?: string;
 }
 
 export interface PublicJobPosting {
   id: number;
   requirement_id: string;
+  business_name?: string;
   job_title: string;
   department: string;
   position_name: string;
